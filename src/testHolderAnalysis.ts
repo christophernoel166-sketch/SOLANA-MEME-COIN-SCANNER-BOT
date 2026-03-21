@@ -8,11 +8,7 @@ async function main() {
 
   console.log(`🧪 Testing holder analysis for: ${mintAddress}`);
 
-  const result = await fetchHolderAnalysis(
-    mintAddress,
-    0.000073675, // optional test price
-    73675        // optional test market cap
-  );
+  const result = await fetchHolderAnalysis(mintAddress);
 
   console.log("✅ Holder analysis result:");
   console.dir(result, { depth: null });
