@@ -111,7 +111,7 @@ export async function runSignalEngine(): Promise<void> {
 
       const hasSafeDevHolding =
         typeof snap.devHoldingPercent === "number" &&
-        snap.devHoldingPercent < 4;
+        snap.devHoldingPercent < 6;
 
       const hasSafeTop10Holding =
         typeof snap.top10HoldingPercent === "number" &&
