@@ -154,7 +154,7 @@ if (!hasSafeRatCount) failureReasons.push("too_many_rat_traders");
 
 if (!hasSafeBundle) failureReasons.push("bundle_risk");
 
-if (!hasSniperSupport) failureReasons.push("low_sniper_activity");
+if (!hasSafeSniperCount) failureReasons.push("unsafe_sniper_count");
 
 if (!hasMomentum) failureReasons.push("low_momentum");
 
@@ -173,7 +173,7 @@ if (!hasVelocityBreakout) failureReasons.push("no_velocity_breakout");
         hasSafeBotCount &&
         hasSafeRatCount &&
         hasSafeBundle &&
-        hasSniperSupport &&
+        hasSafeSniperCount &&
         hasMomentum &&
         hasVelocityBreakout;
 
@@ -217,7 +217,7 @@ if (!hasVelocityBreakout) failureReasons.push("no_velocity_breakout");
         hasSmartWalletSupport,
         hasSafeBotCount,
         hasSafeRatCount,
-        hasSniperSupport,
+        hasSafeSniperCount,
         hasMomentum,
 
         isMatch
@@ -263,7 +263,7 @@ if (!hasVelocityBreakout) failureReasons.push("no_velocity_breakout");
 • Velocity Breakout Score: ${breakoutScore}
 
 *Status*
-• Boosted: "YES" : "NO"}
+• Boosted: ${isBoosted ? "YES" : "NO"}
 
 *CA*
 \`${snap.mintAddress}\`
