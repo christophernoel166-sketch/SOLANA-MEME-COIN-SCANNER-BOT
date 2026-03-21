@@ -94,16 +94,17 @@ async function getKnownDevHoldingPercent(
     let decimals = 0;
 
     for (const account of response.value) {
-      const parsed: any = account.account.data.parsed?.info;
-      const tokenAmount = parsed?.tokenAmount;
+  const parsedAccount = account.account.data as any;
+  const parsedInfo = parsedAccount?.parsed?.info;
+  const tokenAmount = parsedInfo?.tokenAmount;
 
-      if (!tokenAmount) continue;
+  if (!tokenAmount) continue;
 
-      const amountRaw = tokenAmount.amount;
-      decimals = Number(tokenAmount.decimals ?? decimals);
+  const amountRaw = tokenAmount.amount;
+  decimals = Number(tokenAmount.decimals ?? decimals);
 
-      totalRaw += BigInt(String(amountRaw));
-    }
+  totalRaw += BigInt(String(amountRaw));
+}
 
     const devUiAmount = toUiAmount(totalRaw, decimals);
     return (devUiAmount / totalSupplyUi) * 100;
