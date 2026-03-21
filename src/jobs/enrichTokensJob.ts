@@ -127,11 +127,7 @@ export function startEnrichmentJob(): void {
         if (passesMarketFilters) {
           console.log(`👥 Running holder analysis for ${token.mintAddress}`);
 
-          const holderAnalysis = await fetchHolderAnalysis(
-            token.mintAddress,
-            priceUsd,
-            marketCap
-          );
+          const holderAnalysis = await fetchHolderAnalysis(token.mintAddress);
 
           holderCount = holderAnalysis.holderCount;
           devHoldingPercent = holderAnalysis.devHoldingPercent;
