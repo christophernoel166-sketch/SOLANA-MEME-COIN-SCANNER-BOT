@@ -18,9 +18,12 @@ export async function runSignalEngine(): Promise<void> {
 
     console.log(`🚀 Boosted tokens loaded: ${boostedSet.size}`);
 
-    const snapshots = await TokenSnapshot.find({ signalSent: false })
-      .sort({ createdAt: -1 })
-      .limit(30);
+    const snapshots = await TokenSnapshot.find({
+  signalSent: false,
+  enrichmentComplete: true
+})
+  .sort({ createdAt: -1 })
+  .limit(30);
 
     for (const snap of snapshots) {
       const age = getTokenAgeMinutes(snap.pairCreatedAt);
@@ -89,11 +92,11 @@ export async function runSignalEngine(): Promise<void> {
 
       const hasLiquidity =
         typeof snap.liquidityUsd === "number" &&
-        snap.liquidityUsd >= 25000;
+        snap.liquidityUsd >= 15000;
 
       const hasMarketCap =
         typeof snap.marketCap === "number" &&
-        snap.marketCap >= 60000;
+        snap.marketCap >= 30000;
 
       const hasVolume =
         typeof snap.volume5m === "number" &&
@@ -108,29 +111,55 @@ export async function runSignalEngine(): Promise<void> {
 
       const hasSafeDevHolding =
         typeof snap.devHoldingPercent === "number" &&
-        snap.devHoldingPercent < 5;
+        snap.devHoldingPercent < 4;
 
       const hasSafeTop10Holding =
         typeof snap.top10HoldingPercent === "number" &&
-        snap.top10HoldingPercent < 10;
+        snap.top10HoldingPercent < 12;
 
-      const hasSmartWalletSupport = smartDegenCount >= 2;
+      const hasSmartWalletSupport = smartDegenCount >= 0;
 
-      const hasSafeBotCount = botDegenCount <= 2;
+      const hasSafeBotCount = botDegenCount <= 6;
 
-      const hasSafeRatCount = ratTraderCount <= 1;
+      const hasSafeRatCount = ratTraderCount <= 10;
 
-      const hasSniperSupport = sniperCount >= 2;
+      const hasSafeSniperCount =
+  sniperCount >= 2 && sniperCount <= 12;
 
-      const hasMomentum = momentumScore >= 50;
+      const hasMomentum = momentumScore >= 40;
 
       const hasVelocityBreakout =
         breakoutScore >= 50 && velocityFlagged;
+
 
       const hasSafeBundle =
         !bundleFlagged &&
         bundleScore < 18 &&
         bundledWalletCount < 4;
+
+const failureReasons: string[] = [];
+
+if (!isFresh) failureReasons.push("not_fresh");
+if (!hasLiquidity) failureReasons.push("low_liquidity");
+if (!hasMarketCap) failureReasons.push("low_market_cap");
+if (!hasVolume) failureReasons.push("low_volume");
+if (!hasBuyPressure) failureReasons.push("no_buy_pressure");
+
+if (!hasSafeDevHolding) failureReasons.push("unsafe_dev_holding");
+if (!hasSafeTop10Holding) failureReasons.push("high_top10_concentration");
+
+if (!hasSmartWalletSupport) failureReasons.push("no_smart_wallet_support");
+if (!hasSafeBotCount) failureReasons.push("too_many_bots");
+if (!hasSafeRatCount) failureReasons.push("too_many_rat_traders");
+
+if (!hasSafeBundle) failureReasons.push("bundle_risk");
+
+if (!hasSniperSupport) failureReasons.push("low_sniper_activity");
+
+if (!hasMomentum) failureReasons.push("low_momentum");
+
+if (!hasVelocityBreakout) failureReasons.push("no_velocity_breakout");
+
 
       const isMatch =
         isFresh &&
@@ -194,7 +223,13 @@ export async function runSignalEngine(): Promise<void> {
         isMatch
       });
 
-      if (!isMatch) continue;
+      if (!isMatch) {
+  console.log(
+    `❌ Signal rejected for ${snap.mintAddress}:`,
+    failureReasons
+  );
+  continue;
+}
 
  const message = `
 🚨 *BOOSTED MEME SIGNAL*

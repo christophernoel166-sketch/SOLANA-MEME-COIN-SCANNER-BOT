@@ -1,6 +1,8 @@
-import dotenv from "dotenv";
+import "dotenv/config";
+
 import express from "express";
 import cors from "cors";
+
 import { connectDB } from "./config/db";
 import Token from "./models/Token";
 import TokenSnapshot from "./models/TokenSnapshot";
@@ -19,14 +21,12 @@ import TokenFundingCluster from "./models/TokenFundingCluster";
 import { detectFundingClusters } from "./services/fundingClusterService";
 import TokenEarlyBuyer from "./models/TokenEarlyBuyer";
 import { getSniperCount } from "./services/sniperIntelService";
-dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
 app.use(cors());
 app.use(express.json());
-
 /*
 |--------------------------------------------------------------------------
 | Root Route

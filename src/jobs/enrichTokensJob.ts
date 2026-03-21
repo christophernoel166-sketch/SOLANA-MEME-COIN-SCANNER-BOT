@@ -76,7 +76,7 @@ export function startEnrichmentJob(): void {
           typeof marketCap === "number" && marketCap >= 30000;
 
         const hasVolume =
-          typeof volume5m === "number" && volume5m >= 1000;
+          typeof volume5m === "number" && volume5m >= 2000;
 
         const hasBuyPressure =
           typeof buys === "number" &&
@@ -91,8 +91,15 @@ export function startEnrichmentJob(): void {
           hasLiquidity &&
           hasMarketCap &&
           hasVolume &&
-          hasBuyPressure ;
-          
+          hasBuyPressure;
+
+        const rejectionReasons: string[] = [];
+
+        if (!isFresh) rejectionReasons.push("not_fresh");
+        if (!hasLiquidity) rejectionReasons.push("low_liquidity");
+        if (!hasMarketCap) rejectionReasons.push("low_market_cap");
+        if (!hasVolume) rejectionReasons.push("low_volume");
+        if (!hasBuyPressure) rejectionReasons.push("no_buy_pressure");
 
         console.log("🧪 Market filter check:", {
           mintAddress: token.mintAddress,
@@ -109,7 +116,8 @@ export function startEnrichmentJob(): void {
           hasVolume,
           hasBuyPressure,
           isBoosted,
-          passesMarketFilters
+          passesMarketFilters,
+          rejectionReasons
         });
 
         let holderCount: number | null = null;
@@ -139,21 +147,21 @@ export function startEnrichmentJob(): void {
               : null;
 
             await recordApproximateEarlyBuyers({
-  mintAddress: token.mintAddress,
-  tokenLaunchTime,
-  buyers: holderAnalysis.top10Wallets,
-  priceUsd
-});
+              mintAddress: token.mintAddress,
+              tokenLaunchTime,
+              buyers: holderAnalysis.top10Wallets,
+              priceUsd
+            });
 
-console.log(
-  `⏱️ Approximate early buyers recorded for ${token.mintAddress}: ${holderAnalysis.top10Wallets.length}`
-);
-await calculateMomentum(token.mintAddress);
+            console.log(
+              `⏱️ Approximate early buyers recorded for ${token.mintAddress}: ${holderAnalysis.top10Wallets.length}`
+            );
 
-console.log(`⚡ Momentum calculated for ${token.mintAddress}`);
-await trackSniperWallets(token.mintAddress);
+            await calculateMomentum(token.mintAddress);
+            console.log(`⚡ Momentum calculated for ${token.mintAddress}`);
 
-console.log(`🎯 Sniper wallets tracked for ${token.mintAddress}`);
+            await trackSniperWallets(token.mintAddress);
+            console.log(`🎯 Sniper wallets tracked for ${token.mintAddress}`);
 
             const walletStats = await analyzeAndSaveTokenWalletStats({
               mintAddress: token.mintAddress,
@@ -204,39 +212,43 @@ console.log(`🎯 Sniper wallets tracked for ${token.mintAddress}`);
               `🏦 Skipping funding cluster analysis for ${token.mintAddress} (no early buyers yet)`
             );
           }
+
+        const snapshot = await TokenSnapshot.create({
+  mintAddress: token.mintAddress,
+  pairAddress: market.pairAddress ?? null,
+
+  priceUsd,
+  liquidityUsd,
+  marketCap,
+
+  buys,
+  sells,
+  volume5m,
+
+  pairCreatedAt,
+  boostsActive,
+
+  holderCount,
+  devHoldingPercent,
+  top10HoldingPercent,
+
+  signalSent: false,
+  enrichmentComplete: true // ✅ ADD THIS LINE
+});
+
+          console.log(`📊 Snapshot saved for ${token.mintAddress}`, snapshot._id);
+
+          await calculateVelocityBreakout(token.mintAddress);
+          console.log(`📈 Velocity breakout calculated for ${token.mintAddress}`);
         } else {
           console.log(
             `⏭️ Skipping advanced analysis for ${token.mintAddress} (market filters not passed)`
           );
+
+          console.log(
+            `🚫 Snapshot skipped for ${token.mintAddress} (did not pass market filters)`
+          );
         }
-
-        const snapshot = await TokenSnapshot.create({
-          mintAddress: token.mintAddress,
-          pairAddress: market.pairAddress ?? null,
-
-          priceUsd,
-          liquidityUsd,
-          marketCap,
-
-          buys,
-          sells,
-          volume5m,
-
-          pairCreatedAt,
-          boostsActive,
-
-          holderCount,
-          devHoldingPercent,
-          top10HoldingPercent,
-
-          signalSent: false
-        });
-
-        console.log(`📊 Snapshot saved for ${token.mintAddress}`, snapshot._id);
-        
-        await calculateVelocityBreakout(token.mintAddress);
-
-       console.log(`📈 Velocity breakout calculated for ${token.mintAddress}`);
       }
     } catch (error) {
       console.error("Enrichment error:", error);

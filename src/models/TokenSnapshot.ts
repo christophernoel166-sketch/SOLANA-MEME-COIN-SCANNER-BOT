@@ -20,6 +20,8 @@ export interface ITokenSnapshot extends Document {
   top10HoldingPercent?: number | null;
 
   signalSent: boolean;
+  enrichmentComplete: boolean; // ✅ ADD THIS
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -93,6 +95,13 @@ const TokenSnapshotSchema = new Schema<ITokenSnapshot>(
     },
 
     signalSent: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+
+    // ✅ ADD THIS BLOCK
+    enrichmentComplete: {
       type: Boolean,
       default: false,
       index: true
