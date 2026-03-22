@@ -109,13 +109,15 @@ export async function runSignalEngine(): Promise<void> {
 
       const isFresh = age < 30;
 
-      const hasSafeDevHolding =
-        typeof snap.devHoldingPercent === "number" &&
-        snap.devHoldingPercent < 6;
+const hasLargestHolderData =
+  typeof snap.largestHolderPercent === "number";
+      const hasSafeLargestHolder =
+  typeof snap.largestHolderPercent === "number" &&
+  snap.largestHolderPercent <= 6;
 
       const hasSafeTop10Holding =
         typeof snap.top10HoldingPercent === "number" &&
-        snap.top10HoldingPercent < 12;
+        snap.top10HoldingPercent < 16;
 
       const hasSmartWalletSupport = smartDegenCount >= 0;
 
@@ -145,7 +147,11 @@ if (!hasMarketCap) failureReasons.push("low_market_cap");
 if (!hasVolume) failureReasons.push("low_volume");
 if (!hasBuyPressure) failureReasons.push("no_buy_pressure");
 
-if (!hasSafeDevHolding) failureReasons.push("unsafe_dev_holding");
+if (!hasLargestHolderData) {
+  failureReasons.push("largest_holder_unknown");
+} else if (!hasSafeLargestHolder) {
+  failureReasons.push("largest_holder_dominance");
+}
 if (!hasSafeTop10Holding) failureReasons.push("high_top10_concentration");
 
 if (!hasSmartWalletSupport) failureReasons.push("no_smart_wallet_support");
@@ -167,7 +173,7 @@ if (!hasVelocityBreakout) failureReasons.push("no_velocity_breakout");
         hasMarketCap &&
         hasVolume &&
         hasBuyPressure &&
-        hasSafeDevHolding &&
+        hasSafeLargestHolder &&
         hasSafeTop10Holding &&
         hasSmartWalletSupport &&
         hasSafeBotCount &&
@@ -186,8 +192,10 @@ if (!hasVelocityBreakout) failureReasons.push("no_velocity_breakout");
         buys: snap.buys,
         sells: snap.sells,
 
+         largestHolderPercent: snap.largestHolderPercent,
         devHoldingPercent: snap.devHoldingPercent,
         top10HoldingPercent: snap.top10HoldingPercent,
+
 
         smartDegenCount,
         botDegenCount,
@@ -242,7 +250,7 @@ if (!hasVelocityBreakout) failureReasons.push("no_velocity_breakout");
 • Buys / Sells: ${snap.buys} / ${snap.sells}
 
 *Holder Safety*
-• Dev Holding: ${snap.devHoldingPercent?.toFixed(2)}%
+• Largest Holder: ${snap.largestHolderPercent?.toFixed(2)}%
 • Top 10 Holding: ${snap.top10HoldingPercent?.toFixed(2)}%
 
 *Wallet Intelligence*

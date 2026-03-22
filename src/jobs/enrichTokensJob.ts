@@ -121,8 +121,9 @@ export function startEnrichmentJob(): void {
         });
 
         let holderCount: number | null = null;
-        let devHoldingPercent: number | null = null;
-        let top10HoldingPercent: number | null = null;
+let largestHolderPercent: number | null = null;
+let devHoldingPercent: number | null = null;
+let top10HoldingPercent: number | null = null;
 
         if (passesMarketFilters) {
           console.log(`👥 Running holder analysis for ${token.mintAddress}`);
@@ -130,12 +131,13 @@ export function startEnrichmentJob(): void {
           const holderAnalysis = await fetchHolderAnalysis(token.mintAddress);
 
           holderCount = holderAnalysis.holderCount;
-          devHoldingPercent = holderAnalysis.devHoldingPercent;
-          top10HoldingPercent = holderAnalysis.top10HoldingPercent;
+largestHolderPercent = holderAnalysis.largestHolderPercent;
+devHoldingPercent = holderAnalysis.devHoldingPercent;
+top10HoldingPercent = holderAnalysis.top10HoldingPercent;
 
           console.log(
-            `👥 Holder analysis complete for ${token.mintAddress} | holders=${holderCount} dev=${devHoldingPercent} top10=${top10HoldingPercent}`
-          );
+  `👥 Holder analysis complete for ${token.mintAddress} | holders=${holderCount} largest=${largestHolderPercent} dev=${devHoldingPercent} top10=${top10HoldingPercent}`
+);
 
           if (holderAnalysis.top10Wallets.length > 0) {
             const tokenLaunchTime = pairCreatedAt
@@ -209,6 +211,13 @@ export function startEnrichmentJob(): void {
             );
           }
 
+console.log(`[ENRICH] Snapshot values for ${token.mintAddress}`, {
+  holderCount,
+  largestHolderPercent,
+  devHoldingPercent,
+  top10HoldingPercent
+});
+
         const snapshot = await TokenSnapshot.create({
   mintAddress: token.mintAddress,
   pairAddress: market.pairAddress ?? null,
@@ -225,8 +234,9 @@ export function startEnrichmentJob(): void {
   boostsActive,
 
   holderCount,
-  devHoldingPercent,
-  top10HoldingPercent,
+largestHolderPercent,
+devHoldingPercent,
+top10HoldingPercent,
 
   signalSent: false,
   enrichmentComplete: true // ✅ ADD THIS LINE

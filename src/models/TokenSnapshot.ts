@@ -16,11 +16,12 @@ export interface ITokenSnapshot extends Document {
   boostsActive?: number;
 
   holderCount?: number | null;
+  largestHolderPercent?: number | null;
   devHoldingPercent?: number | null;
   top10HoldingPercent?: number | null;
 
   signalSent: boolean;
-  enrichmentComplete: boolean; // ✅ ADD THIS
+  enrichmentComplete: boolean;
 
   createdAt: Date;
   updatedAt: Date;
@@ -84,6 +85,11 @@ const TokenSnapshotSchema = new Schema<ITokenSnapshot>(
       default: null
     },
 
+    largestHolderPercent: {
+      type: Number,
+      default: null
+    },
+
     devHoldingPercent: {
       type: Number,
       default: null
@@ -100,7 +106,6 @@ const TokenSnapshotSchema = new Schema<ITokenSnapshot>(
       index: true
     },
 
-    // ✅ ADD THIS BLOCK
     enrichmentComplete: {
       type: Boolean,
       default: false,
