@@ -107,17 +107,17 @@ export async function runSignalEngine(): Promise<void> {
         typeof snap.sells === "number" &&
         snap.buys > snap.sells;
 
-      const isFresh = age < 30;
+      const isFresh = age < 40;
 
 const hasLargestHolderData =
   typeof snap.largestHolderPercent === "number";
       const hasSafeLargestHolder =
   typeof snap.largestHolderPercent === "number" &&
-  snap.largestHolderPercent <= 6;
+  snap.largestHolderPercent <= 15;
 
       const hasSafeTop10Holding =
         typeof snap.top10HoldingPercent === "number" &&
-        snap.top10HoldingPercent < 16;
+        snap.top10HoldingPercent < 20;
 
       const hasSmartWalletSupport = smartDegenCount >= 0;
 
@@ -126,7 +126,7 @@ const hasLargestHolderData =
       const hasSafeRatCount = ratTraderCount <= 10;
 
       const hasSafeSniperCount =
-  sniperCount >= 2 && sniperCount <= 12;
+  sniperCount >= 2 && sniperCount <= 15;
 
       const hasMomentum = momentumScore >= 40;
 
@@ -136,8 +136,8 @@ const hasLargestHolderData =
 
       const hasSafeBundle =
         !bundleFlagged &&
-        bundleScore < 18 &&
-        bundledWalletCount < 4;
+        bundleScore < 7 &&
+        bundledWalletCount < 5;
 
 const failureReasons: string[] = [];
 

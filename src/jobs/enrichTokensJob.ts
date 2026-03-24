@@ -67,7 +67,7 @@ export function startEnrichmentJob(): void {
         const ageMinutes = getTokenAgeMinutes(pairCreatedAt);
 
         const isFresh =
-          typeof ageMinutes === "number" && ageMinutes < 30;
+          typeof ageMinutes === "number" && ageMinutes < 40;
 
         const hasLiquidity =
           typeof liquidityUsd === "number" && liquidityUsd >= 15000;
@@ -218,29 +218,36 @@ console.log(`[ENRICH] Snapshot values for ${token.mintAddress}`, {
   top10HoldingPercent
 });
 
-        const snapshot = await TokenSnapshot.create({
-  mintAddress: token.mintAddress,
-  pairAddress: market.pairAddress ?? null,
+       const snapshot = await TokenSnapshot.findOneAndUpdate(
+  { mintAddress: token.mintAddress },
+  {
+    mintAddress: token.mintAddress,
+    pairAddress: market.pairAddress ?? null,
 
-  priceUsd,
-  liquidityUsd,
-  marketCap,
+    priceUsd,
+    liquidityUsd,
+    marketCap,
 
-  buys,
-  sells,
-  volume5m,
+    buys,
+    sells,
+    volume5m,
 
-  pairCreatedAt,
-  boostsActive,
+    pairCreatedAt,
+    boostsActive,
 
-  holderCount,
-largestHolderPercent,
-devHoldingPercent,
-top10HoldingPercent,
+    holderCount,
+    largestHolderPercent,
+    devHoldingPercent,
+    top10HoldingPercent,
 
-  signalSent: false,
-  enrichmentComplete: true // ✅ ADD THIS LINE
-});
+    signalSent: false,
+    enrichmentComplete: true
+  },
+  {
+    upsert: true,
+    new: true
+  }
+);
 
           console.log(`📊 Snapshot saved for ${token.mintAddress}`, snapshot._id);
 
