@@ -66,7 +66,7 @@ export function startEnrichmentJob(): void {
 
         const ageMinutes = getTokenAgeMinutes(pairCreatedAt);
 
-        if (typeof ageMinutes === "number" && ageMinutes > 60) {
+        if (typeof ageMinutes === "number" && ageMinutes > 240) {
           console.log(
             `⏭️ Skipping ${token.mintAddress} in enrichment (older than 60 minutes)`
           );
@@ -74,7 +74,7 @@ export function startEnrichmentJob(): void {
         }
 
         const isFresh =
-          typeof ageMinutes === "number" && ageMinutes < 50;
+  typeof ageMinutes === "number" && ageMinutes <= 240;
 
         const hasLiquidity =
           typeof liquidityUsd === "number" && liquidityUsd >= 15000;

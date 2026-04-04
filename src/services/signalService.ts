@@ -50,21 +50,30 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
 
     const snapshots = await TokenSnapshot.find({
       signalSent: false,
-      enrichmentComplete: true
+      enrichmentComplete: true,
+      pairCreatedAt: { $ne: null }
     })
       .sort({ createdAt: -1 })
-      .limit(30);
+      .limit(80);
 
-    for (const snap of snapshots) {
+    const filteredSnapshots = snapshots.filter((snap) => {
       const age = getTokenAgeMinutes(snap.pairCreatedAt);
-      if (age === null) continue;
+      if (age === null) return false;
 
       if (profile) {
-        if (age < profile.minAge || age > profile.maxAge) {
-          console.log(`⏭️ Skipping ${snap.mintAddress} (${profile.name})`);
-          continue;
-        }
+        return age >= profile.minAge && age <= profile.maxAge;
       }
+
+      return true;
+    });
+
+    console.log(
+      `📊 ${profile?.name ?? "default"} candidates after age filter: ${filteredSnapshots.length}`
+    );
+
+    for (const snap of filteredSnapshots) {
+      const age = getTokenAgeMinutes(snap.pairCreatedAt);
+      if (age === null) continue;
 
       const [walletStats, bundleStats, fundingCluster, momentum, velocity] =
         await Promise.all([
@@ -91,10 +100,9 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
 
       const isBoosted = boostedSet.has(snap.mintAddress);
 
-      // 🔥 ANTI-FAKE METRICS
       const buySellRatio =
-        snap.sells && snap.sells > 0
-          ? (snap.buys ?? 0) / snap.sells
+        (snap.sells ?? 0) > 0
+          ? (snap.buys ?? 0) / (snap.sells ?? 0)
           : (snap.buys ?? 0);
 
       const hasStrongBuyPressure = buySellRatio >= 1.5;
@@ -104,7 +112,6 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
 
       const hasHealthyParticipation = walletParticipation >= 0.02;
 
-      // 🔥 RUG-RISK METRICS
       const sellBuyRatio =
         (snap.buys ?? 0) > 0
           ? (snap.sells ?? 0) / (snap.buys ?? 0)
@@ -117,12 +124,12 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
         snap.liquidityUsd < (profile?.minLiquidityUsd ?? 15000) * 1.2;
 
       const hasLargestHolderData =
-  typeof snap.largestHolderPercent === "number";
+        typeof snap.largestHolderPercent === "number";
 
-const hasSafeLargestHolder =
-  typeof snap.largestHolderPercent === "number" &&
-  snap.largestHolderPercent <=
-    (profile?.maxLargestHolderPercent ?? 5);
+      const hasSafeLargestHolder =
+        typeof snap.largestHolderPercent === "number" &&
+        snap.largestHolderPercent <=
+          (profile?.maxLargestHolderPercent ?? 5);
 
       const hasSafeTop10Holding =
         typeof snap.top10HoldingPercent === "number" &&
@@ -179,7 +186,6 @@ const hasSafeLargestHolder =
 
       const hasHighRugRisk = rugRiskScore >= 40;
 
-      // MARKET CHECKS
       const hasLiquidity =
         typeof snap.liquidityUsd === "number" &&
         snap.liquidityUsd >= (profile?.minLiquidityUsd ?? 15000);
@@ -300,27 +306,36 @@ const hasSafeLargestHolder =
         sniperCount,
         momentumScore,
         breakoutScore,
+        isBoosted,
         isMatch
       });
 
       if (!isMatch) {
-        console.log("❌ Rejected:", failureReasons);
+        console.log(`❌ Rejected ${snap.mintAddress}:`, failureReasons);
         continue;
       }
 
       const message = `
-🚀 *${profile?.name.toUpperCase()} SIGNAL*
+🚀 *${profile?.name?.toUpperCase() ?? "DEFAULT"} SIGNAL*
 
 CA:
 \`${snap.mintAddress}\`
 
-Liquidity: $${snap.liquidityUsd}
-MarketCap: $${snap.marketCap}
-Volume(5m): $${snap.volume5m}
+Liquidity: $${snap.liquidityUsd ?? "N/A"}
+MarketCap: $${snap.marketCap ?? "N/A"}
+Volume(5m): $${snap.volume5m ?? "N/A"}
 
 Holders:
-Largest: ${snap.largestHolderPercent?.toFixed(2)}%
-Top10: ${snap.top10HoldingPercent?.toFixed(2)}%
+Largest: ${
+        typeof snap.largestHolderPercent === "number"
+          ? snap.largestHolderPercent.toFixed(2)
+          : "N/A"
+      }%
+Top10: ${
+        typeof snap.top10HoldingPercent === "number"
+          ? snap.top10HoldingPercent.toFixed(2)
+          : "N/A"
+      }%
 
 Momentum: ${momentumScore}
 Breakout: ${breakoutScore}
