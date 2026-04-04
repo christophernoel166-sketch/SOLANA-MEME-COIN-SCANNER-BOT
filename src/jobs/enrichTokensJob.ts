@@ -151,25 +151,29 @@ export function startEnrichmentJob(): void {
           ) {
             console.log(`⏭️ Using cached holder data for ${token.mintAddress}`);
 
-            holderCount = existingSnapshot.holderCount;
-            largestHolderPercent = existingSnapshot.largestHolderPercent;
-            devHoldingPercent = existingSnapshot.devHoldingPercent;
-            top10HoldingPercent = existingSnapshot.top10HoldingPercent;
+            holderCount = existingSnapshot.holderCount ?? null;
+            largestHolderPercent =
+              existingSnapshot.largestHolderPercent ?? null;
+            devHoldingPercent = existingSnapshot.devHoldingPercent ?? null;
+            top10HoldingPercent =
+              existingSnapshot.top10HoldingPercent ?? null;
           } else {
             console.log(`👥 Running holder analysis for ${token.mintAddress}`);
 
             holderAnalysis = await fetchHolderAnalysis(token.mintAddress, {
-  marketContext: {
-    dexId: market.dexId ?? null,
-    pairAddress: market.pairAddress ?? null,
-    labels: market.labels ?? null
-  }
-});
+              marketContext: {
+                dexId: market.dexId ?? null,
+                pairAddress: market.pairAddress ?? null,
+                labels: market.labels ?? null
+              }
+            });
 
-            holderCount = holderAnalysis.holderCount;
-            largestHolderPercent = holderAnalysis.largestHolderPercent;
-            devHoldingPercent = holderAnalysis.devHoldingPercent;
-            top10HoldingPercent = holderAnalysis.top10HoldingPercent;
+            holderCount = holderAnalysis.holderCount ?? null;
+            largestHolderPercent =
+              holderAnalysis.largestHolderPercent ?? null;
+            devHoldingPercent = holderAnalysis.devHoldingPercent ?? null;
+            top10HoldingPercent =
+              holderAnalysis.top10HoldingPercent ?? null;
           }
 
           console.log(
@@ -280,10 +284,10 @@ export function startEnrichmentJob(): void {
               pairCreatedAt,
               boostsActive,
 
-              holderCount,
-              largestHolderPercent,
-              devHoldingPercent,
-              top10HoldingPercent,
+              holderCount: holderCount ?? null,
+              largestHolderPercent: largestHolderPercent ?? null,
+              devHoldingPercent: devHoldingPercent ?? null,
+              top10HoldingPercent: top10HoldingPercent ?? null,
               holderLastCheckedAt: new Date(),
 
               signalSent: false,
