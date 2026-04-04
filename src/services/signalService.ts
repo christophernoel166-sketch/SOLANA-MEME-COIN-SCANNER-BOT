@@ -117,12 +117,12 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
         snap.liquidityUsd < (profile?.minLiquidityUsd ?? 15000) * 1.2;
 
       const hasLargestHolderData =
-        typeof snap.largestHolderPercent === "number";
+  typeof snap.largestHolderPercent === "number";
 
-      const hasSafeLargestHolder =
-        hasLargestHolderData &&
-        snap.largestHolderPercent <=
-          (profile?.maxLargestHolderPercent ?? 15);
+const hasSafeLargestHolder =
+  typeof snap.largestHolderPercent === "number" &&
+  snap.largestHolderPercent <=
+    (profile?.maxLargestHolderPercent ?? 5);
 
       const hasSafeTop10Holding =
         typeof snap.top10HoldingPercent === "number" &&
