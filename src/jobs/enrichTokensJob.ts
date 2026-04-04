@@ -66,17 +66,24 @@ export function startEnrichmentJob(): void {
 
         const ageMinutes = getTokenAgeMinutes(pairCreatedAt);
 
+        if (typeof ageMinutes === "number" && ageMinutes > 60) {
+          console.log(
+            `⏭️ Skipping ${token.mintAddress} in enrichment (older than 60 minutes)`
+          );
+          continue;
+        }
+
         const isFresh =
-          typeof ageMinutes === "number" && ageMinutes < 40;
+          typeof ageMinutes === "number" && ageMinutes < 50;
 
         const hasLiquidity =
           typeof liquidityUsd === "number" && liquidityUsd >= 15000;
 
         const hasMarketCap =
-          typeof marketCap === "number" && marketCap >= 30000;
+          typeof marketCap === "number" && marketCap >= 60000;
 
         const hasVolume =
-          typeof volume5m === "number" && volume5m >= 2000;
+          typeof volume5m === "number" && volume5m >= 3000;
 
         const hasBuyPressure =
           typeof buys === "number" &&
@@ -121,25 +128,55 @@ export function startEnrichmentJob(): void {
         });
 
         let holderCount: number | null = null;
-let largestHolderPercent: number | null = null;
-let devHoldingPercent: number | null = null;
-let top10HoldingPercent: number | null = null;
+        let largestHolderPercent: number | null = null;
+        let devHoldingPercent: number | null = null;
+        let top10HoldingPercent: number | null = null;
 
         if (passesMarketFilters) {
-          console.log(`👥 Running holder analysis for ${token.mintAddress}`);
+          let holderAnalysis: Awaited<ReturnType<typeof fetchHolderAnalysis>> | null =
+            null;
 
-          const holderAnalysis = await fetchHolderAnalysis(token.mintAddress);
+          const now = Date.now();
+          const cacheDuration = 5 * 60 * 1000; // 5 minutes
 
-          holderCount = holderAnalysis.holderCount;
-largestHolderPercent = holderAnalysis.largestHolderPercent;
-devHoldingPercent = holderAnalysis.devHoldingPercent;
-top10HoldingPercent = holderAnalysis.top10HoldingPercent;
+          const existingSnapshot = await TokenSnapshot.findOne({
+            mintAddress: token.mintAddress
+          });
+
+          if (
+            existingSnapshot &&
+            existingSnapshot.holderLastCheckedAt &&
+            now - new Date(existingSnapshot.holderLastCheckedAt).getTime() <
+              cacheDuration
+          ) {
+            console.log(`⏭️ Using cached holder data for ${token.mintAddress}`);
+
+            holderCount = existingSnapshot.holderCount;
+            largestHolderPercent = existingSnapshot.largestHolderPercent;
+            devHoldingPercent = existingSnapshot.devHoldingPercent;
+            top10HoldingPercent = existingSnapshot.top10HoldingPercent;
+          } else {
+            console.log(`👥 Running holder analysis for ${token.mintAddress}`);
+
+            holderAnalysis = await fetchHolderAnalysis(token.mintAddress, {
+  marketContext: {
+    dexId: market.dexId ?? null,
+    pairAddress: market.pairAddress ?? null,
+    labels: market.labels ?? null
+  }
+});
+
+            holderCount = holderAnalysis.holderCount;
+            largestHolderPercent = holderAnalysis.largestHolderPercent;
+            devHoldingPercent = holderAnalysis.devHoldingPercent;
+            top10HoldingPercent = holderAnalysis.top10HoldingPercent;
+          }
 
           console.log(
-  `👥 Holder analysis complete for ${token.mintAddress} | holders=${holderCount} largest=${largestHolderPercent} dev=${devHoldingPercent} top10=${top10HoldingPercent}`
-);
+            `👥 Holder analysis complete for ${token.mintAddress} | holders=${holderCount} largest=${largestHolderPercent} dev=${devHoldingPercent} top10=${top10HoldingPercent}`
+          );
 
-          if (holderAnalysis.top10Wallets.length > 0) {
+          if (holderAnalysis && holderAnalysis.topHolders.length > 0) {
             const tokenLaunchTime = pairCreatedAt
               ? new Date(pairCreatedAt)
               : null;
@@ -147,12 +184,16 @@ top10HoldingPercent = holderAnalysis.top10HoldingPercent;
             await recordApproximateEarlyBuyers({
               mintAddress: token.mintAddress,
               tokenLaunchTime,
-              buyers: holderAnalysis.top10Wallets,
+              buyers: holderAnalysis.topHolders.map((holder) => ({
+                owner: holder.address,
+                amount: holder.amount,
+                percentage: holder.percent
+              })),
               priceUsd
             });
 
             console.log(
-              `⏱️ Approximate early buyers recorded for ${token.mintAddress}: ${holderAnalysis.top10Wallets.length}`
+              `⏱️ Approximate early buyers recorded for ${token.mintAddress}: ${holderAnalysis.topHolders.length}`
             );
 
             await calculateMomentum(token.mintAddress);
@@ -163,7 +204,11 @@ top10HoldingPercent = holderAnalysis.top10HoldingPercent;
 
             const walletStats = await analyzeAndSaveTokenWalletStats({
               mintAddress: token.mintAddress,
-              holders: holderAnalysis.top10Wallets
+              holders: holderAnalysis.topHolders.map((holder) => ({
+                owner: holder.address,
+                amount: holder.amount,
+                percentage: holder.percent
+              }))
             });
 
             console.log(
@@ -211,43 +256,44 @@ top10HoldingPercent = holderAnalysis.top10HoldingPercent;
             );
           }
 
-console.log(`[ENRICH] Snapshot values for ${token.mintAddress}`, {
-  holderCount,
-  largestHolderPercent,
-  devHoldingPercent,
-  top10HoldingPercent
-});
+          console.log(`[ENRICH] Snapshot values for ${token.mintAddress}`, {
+            holderCount,
+            largestHolderPercent,
+            devHoldingPercent,
+            top10HoldingPercent
+          });
 
-       const snapshot = await TokenSnapshot.findOneAndUpdate(
-  { mintAddress: token.mintAddress },
-  {
-    mintAddress: token.mintAddress,
-    pairAddress: market.pairAddress ?? null,
+          const snapshot = await TokenSnapshot.findOneAndUpdate(
+            { mintAddress: token.mintAddress },
+            {
+              mintAddress: token.mintAddress,
+              pairAddress: market.pairAddress ?? null,
 
-    priceUsd,
-    liquidityUsd,
-    marketCap,
+              priceUsd,
+              liquidityUsd,
+              marketCap,
 
-    buys,
-    sells,
-    volume5m,
+              buys,
+              sells,
+              volume5m,
 
-    pairCreatedAt,
-    boostsActive,
+              pairCreatedAt,
+              boostsActive,
 
-    holderCount,
-    largestHolderPercent,
-    devHoldingPercent,
-    top10HoldingPercent,
+              holderCount,
+              largestHolderPercent,
+              devHoldingPercent,
+              top10HoldingPercent,
+              holderLastCheckedAt: new Date(),
 
-    signalSent: false,
-    enrichmentComplete: true
-  },
-  {
-    upsert: true,
-    new: true
-  }
-);
+              signalSent: false,
+              enrichmentComplete: true
+            },
+            {
+              upsert: true,
+              new: true
+            }
+          );
 
           console.log(`📊 Snapshot saved for ${token.mintAddress}`, snapshot._id);
 

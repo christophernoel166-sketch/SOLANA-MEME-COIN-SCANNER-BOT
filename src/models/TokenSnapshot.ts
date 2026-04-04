@@ -20,6 +20,22 @@ export interface ITokenSnapshot extends Document {
   devHoldingPercent?: number | null;
   top10HoldingPercent?: number | null;
 
+  holderLastCheckedAt?: Date | null;
+
+  // ✅ NEW (IMPORTANT)
+  topHolders?: {
+    address: string;
+    amount: number;
+    percent: number;
+  }[];
+
+  excludedAccounts?: {
+    address: string;
+    amount: number;
+    percent: number;
+    reason: string;
+  }[];
+
   signalSent: boolean;
   enrichmentComplete: boolean;
 
@@ -98,6 +114,36 @@ const TokenSnapshotSchema = new Schema<ITokenSnapshot>(
     top10HoldingPercent: {
       type: Number,
       default: null
+    },
+
+    holderLastCheckedAt: {
+      type: Date,
+      default: null,
+      index: true
+    },
+
+    // ✅ NEW FIELDS
+    topHolders: {
+      type: [
+        {
+          address: String,
+          amount: Number,
+          percent: Number
+        }
+      ],
+      default: []
+    },
+
+    excludedAccounts: {
+      type: [
+        {
+          address: String,
+          amount: Number,
+          percent: Number,
+          reason: String
+        }
+      ],
+      default: []
     },
 
     signalSent: {

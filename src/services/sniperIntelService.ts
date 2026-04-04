@@ -6,21 +6,18 @@ export async function getSniperCount(
 ): Promise<number> {
   const buyers = await TokenEarlyBuyer.find({
     mintAddress
-  }).limit(10);
+  })
+    .limit(10)
+    .lean();
 
-  let sniperCount = 0;
+  if (buyers.length === 0) return 0;
 
-  for (const buyer of buyers) {
-    const sniper = await SniperWallet.findOne({
-      walletAddress: buyer.walletAddress
-    });
+  const walletAddresses = buyers.map((b) => b.walletAddress);
 
-    if (!sniper) continue;
+  const snipers = await SniperWallet.find({
+    walletAddress: { $in: walletAddresses },
+    earlyBuyCount: { $gte: 3 }
+  }).lean();
 
-    if (sniper.earlyBuyCount >= 3) {
-      sniperCount++;
-    }
-  }
-
-  return sniperCount;
+  return snipers.length;
 }

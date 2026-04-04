@@ -1,4 +1,5 @@
-import { Connection, PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
+import { withRpc } from "../utils/rpcManager";
 
 const KNOWN_BURN_WALLETS = new Set<string>([
   "11111111111111111111111111111111",
@@ -16,40 +17,50 @@ const KNOWN_SYSTEM_OR_PROGRAM_OWNERS = new Set<string>([
  * Value = label for logging/debugging
  */
 const EXCLUDED_OWNER_LABELS: Record<string, string> = {
-  // Pump.fun / AMM / LP examples
-  // "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "Pump.fun",
-  // "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy": "Pump.fun AMM",
-  // "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz": "Raydium LP",
-
-  // Exchange examples
-  // "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "Binance",
-  // "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "OKX",
-  // "cccccccccccccccccccccccccccccccccccccccccccc": "Bybit",
-  // "dddddddddddddddddddddddddddddddddddddddddddd": "MEXC",
-  // "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": "KuCoin",
-  // "ffffffffffffffffffffffffffffffffffffffffffff": "Gate",
-  // "gggggggggggggggggggggggggggggggggggggggggggg": "Coinbase"
+  // Example:
+  // "Fzb8RBE1QyJqTvGZUFM4RuKMQ9DLojj15Q9bK8iB61bc": "Pump.fun AMM",
+  // "AnotherWalletHere": "Binance",
+  // "AnotherWalletHere2": "Raydium LP"
 };
 
 export interface HolderAnalysis {
   holderCount: number | null;
-  devHoldingPercent: number | null;
   largestHolderPercent: number | null;
   top10HoldingPercent: number | null;
-  top10Wallets: Array<{
-    owner: string;
+
+  topHolders: Array<{
+    address: string;
     amount: number;
-    percentage: number;
+    percent: number;
   }>;
+
+  excludedAccounts: Array<{
+    address: string;
+    amount: number;
+    percent: number;
+    reason: string;
+  }>;
+
+  devHoldingPercent: number | null;
+}
+
+export interface HolderAnalysisOptions {
+  devWalletAddress?: string | null;
+  marketContext?: {
+    dexId?: string | null;
+    pairAddress?: string | null;
+    labels?: string[] | null;
+  };
 }
 
 function emptyHolderAnalysis(): HolderAnalysis {
   return {
     holderCount: null,
-    devHoldingPercent: null,
     largestHolderPercent: null,
     top10HoldingPercent: null,
-    top10Wallets: []
+    topHolders: [],
+    excludedAccounts: [],
+    devHoldingPercent: null
   };
 }
 
@@ -63,16 +74,6 @@ function getExcludedOwnerLabel(owner?: string): string | null {
   return EXCLUDED_OWNER_LABELS[owner] ?? null;
 }
 
-function getConnection(): Connection {
-  const rpcUrl = process.env.QUICKNODE_RPC_URL?.trim();
-
-  if (!rpcUrl) {
-    throw new Error("QUICKNODE_RPC_URL is missing in .env");
-  }
-
-  return new Connection(rpcUrl, "confirmed");
-}
-
 function toUiAmount(
   amountRaw: string | number | bigint,
   decimals: number
@@ -81,79 +82,6 @@ function toUiAmount(
     typeof amountRaw === "bigint" ? amountRaw : BigInt(String(amountRaw));
 
   return Number(raw) / Math.pow(10, decimals);
-}
-
-async function getTokenAccountOwner(
-  connection: Connection,
-  tokenAccountAddress: string
-): Promise<string | null> {
-  try {
-    const info = await connection.getParsedAccountInfo(
-      new PublicKey(tokenAccountAddress),
-      "confirmed"
-    );
-
-    const value: any = info.value;
-    const owner = value?.data?.parsed?.info?.owner;
-
-    return typeof owner === "string" ? owner : null;
-  } catch (error) {
-    console.error(
-      `Failed to resolve token-account owner for ${tokenAccountAddress}:`,
-      error
-    );
-    return null;
-  }
-}
-
-async function isLikelyLpOrProtocolTokenAccount(
-  connection: Connection,
-  tokenAccountAddress: string
-): Promise<boolean> {
-  try {
-    const info = await connection.getParsedAccountInfo(
-      new PublicKey(tokenAccountAddress),
-      "confirmed"
-    );
-
-    const value: any = info.value;
-    const parsed = value?.data?.parsed?.info;
-
-    if (!parsed) return false;
-
-    const owner = parsed?.owner;
-    const state = parsed?.state;
-    const isNative = parsed?.isNative;
-    const tokenAmount = parsed?.tokenAmount;
-    const delegate = parsed?.delegate;
-    const delegatedAmount = parsed?.delegatedAmount;
-
-    if (state && state !== "initialized") return true;
-    if (isNative === true) return true;
-
-    if (
-      typeof owner === "string" &&
-      KNOWN_SYSTEM_OR_PROGRAM_OWNERS.has(owner)
-    ) {
-      return true;
-    }
-
-    if (delegate && delegatedAmount) {
-      return true;
-    }
-
-    if (!tokenAmount) {
-      return true;
-    }
-
-    return false;
-  } catch (error) {
-    console.error(
-      `Failed LP/protocol check for token account ${tokenAccountAddress}:`,
-      error
-    );
-    return false;
-  }
 }
 
 function isLikelyNonUserOwner(owner: string): boolean {
@@ -165,8 +93,115 @@ function isLikelyNonUserOwner(owner: string): boolean {
   return false;
 }
 
+function detectNonUserSignals(args: {
+  owner: string;
+  tokenAccountAddress: string;
+  parsed: any;
+  amount: number;
+  totalSupplyUi: number;
+  marketContext?: {
+    dexId?: string | null;
+    pairAddress?: string | null;
+    labels?: string[] | null;
+  };
+}): {
+  isLikelyNonUser: boolean;
+  reasons: string[];
+} {
+  const {
+    owner,
+    tokenAccountAddress,
+    parsed,
+    amount,
+    totalSupplyUi,
+    marketContext
+  } = args;
+
+  const reasons: string[] = [];
+  const sharePercent =
+    totalSupplyUi > 0 ? (amount / totalSupplyUi) * 100 : 0;
+
+  const dexId = marketContext?.dexId?.toLowerCase() ?? "";
+  const labels = (marketContext?.labels ?? []).map((x) => x.toLowerCase());
+
+  const isPumpFunMarket = dexId.includes("pump");
+  const isLikelyAmmMarket =
+    isPumpFunMarket ||
+    dexId.includes("raydium") ||
+    dexId.includes("orca") ||
+    dexId.includes("meteora") ||
+    labels.some((label) => label.includes("amm")) ||
+    labels.some((label) => label.includes("lp")) ||
+    labels.some((label) => label.includes("pool"));
+
+  if (!parsed) {
+    reasons.push("missing_parsed_data");
+  }
+
+  if (parsed?.state && parsed.state !== "initialized") {
+    reasons.push("non_initialized_state");
+  }
+
+  if (parsed?.isNative === true) {
+    reasons.push("native_account");
+  }
+
+  if (parsed?.delegate) {
+    reasons.push("delegated_account");
+  }
+
+  if (!parsed?.tokenAmount) {
+    reasons.push("missing_token_amount");
+  }
+
+  if (owner === tokenAccountAddress) {
+    reasons.push("self_owned_token_account");
+  }
+
+  if (typeof owner === "string" && owner.length < 32) {
+    reasons.push("invalid_owner_shape");
+  }
+
+  if (sharePercent >= 15) {
+    reasons.push("very_large_share");
+  }
+
+  if (sharePercent >= 20) {
+    reasons.push("extreme_share");
+  }
+
+  const hasStructuralOddity =
+    !!parsed?.delegate ||
+    !parsed?.tokenAmount ||
+    (parsed?.state && parsed.state !== "initialized") ||
+    owner === tokenAccountAddress;
+
+  if (sharePercent >= 10 && hasStructuralOddity) {
+    reasons.push("large_share_with_structural_oddity");
+  }
+
+  if (isLikelyAmmMarket && sharePercent >= 15) {
+    reasons.push("amm_large_share_candidate");
+  }
+
+  if (isPumpFunMarket && sharePercent >= 12) {
+    reasons.push("pumpfun_pool_candidate");
+  }
+
+  const isLikelyNonUser =
+    reasons.includes("extreme_share") ||
+    reasons.includes("large_share_with_structural_oddity") ||
+    reasons.includes("amm_large_share_candidate") ||
+    reasons.includes("pumpfun_pool_candidate") ||
+    reasons.length >= 2;
+
+  return {
+    isLikelyNonUser,
+    reasons
+  };
+}
+
 async function getKnownDevHoldingPercent(
-  connection: Connection,
   mintAddress: string,
   devWalletAddress: string,
   totalSupplyUi: number
@@ -174,10 +209,12 @@ async function getKnownDevHoldingPercent(
   if (!devWalletAddress || totalSupplyUi <= 0) return null;
 
   try {
-    const response = await connection.getTokenAccountsByOwner(
-      new PublicKey(devWalletAddress),
-      { mint: new PublicKey(mintAddress) },
-      "confirmed"
+    const response = await withRpc((connection) =>
+      connection.getTokenAccountsByOwner(
+        new PublicKey(devWalletAddress),
+        { mint: new PublicKey(mintAddress) },
+        "confirmed"
+      )
     );
 
     let totalRaw = 0n;
@@ -209,17 +246,20 @@ async function getKnownDevHoldingPercent(
 
 export async function fetchHolderAnalysis(
   mintAddress: string,
-  devWalletAddress?: string | null
+  options?: HolderAnalysisOptions
 ): Promise<HolderAnalysis> {
   try {
-    const connection = getConnection();
     const mintPubkey = new PublicKey(mintAddress);
 
-    console.log(`🔍 QuickNode holder analysis for mint: ${mintAddress}`);
+    console.log(`🔍 Holder analysis for mint: ${mintAddress}`);
 
     const [largestAccountsResp, tokenSupplyResp] = await Promise.all([
-      connection.getTokenLargestAccounts(mintPubkey, "confirmed"),
-      connection.getTokenSupply(mintPubkey, "confirmed")
+      withRpc((connection) =>
+        connection.getTokenLargestAccounts(mintPubkey, "confirmed")
+      ),
+      withRpc((connection) =>
+        connection.getTokenSupply(mintPubkey, "confirmed")
+      )
     ]);
 
     const totalSupplyUi = Number(tokenSupplyResp.value.uiAmount ?? 0);
@@ -229,49 +269,111 @@ export async function fetchHolderAnalysis(
       return emptyHolderAnalysis();
     }
 
-    const topAccounts = largestAccountsResp.value.slice(0, 20);
+    const topAccounts = largestAccountsResp.value.slice(0, 12);
 
-    const resolvedAccounts = await Promise.all(
-      topAccounts.map(async (acct) => {
-        const tokenAccountAddress = acct.address.toBase58();
-        const owner = await getTokenAccountOwner(connection, tokenAccountAddress);
-        const amount = Number(acct.uiAmount ?? 0);
-        const isLikelyLpOrProtocol = await isLikelyLpOrProtocolTokenAccount(
-          connection,
-          tokenAccountAddress
+    const resolvedAccounts: Array<{
+      tokenAccountAddress: string;
+      owner: string;
+      amount: number;
+      isLikelyLpOrProtocol: boolean;
+      autoDetectionReasons: string[];
+    }> = [];
+
+    for (const acct of topAccounts) {
+      const tokenAccountAddress = acct.address.toBase58();
+
+      try {
+        const info = await withRpc((connection) =>
+          connection.getParsedAccountInfo(
+            new PublicKey(tokenAccountAddress),
+            "confirmed"
+          )
         );
 
-        return {
+        const parsed = (info.value as any)?.data?.parsed?.info;
+        if (!parsed) continue;
+
+        const owner = parsed.owner ?? tokenAccountAddress;
+        const amount = Number(acct.uiAmount ?? 0);
+
+        const autoDetection = detectNonUserSignals({
+          owner,
           tokenAccountAddress,
-          owner: owner ?? tokenAccountAddress,
+          parsed,
           amount,
-          isLikelyLpOrProtocol
-        };
-      })
-    );
+          totalSupplyUi,
+          marketContext: options?.marketContext
+        });
+
+        resolvedAccounts.push({
+          tokenAccountAddress,
+          owner,
+          amount,
+          isLikelyLpOrProtocol: autoDetection.isLikelyNonUser,
+          autoDetectionReasons: autoDetection.reasons
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } catch (err) {
+        console.error(`Error resolving ${tokenAccountAddress}:`, err);
+      }
+    }
 
     const groupedByOwner = new Map<string, number>();
 
+    const excludedAccounts: Array<{
+      address: string;
+      amount: number;
+      percent: number;
+      reason: string;
+    }> = [];
+
     for (const item of resolvedAccounts) {
       if (!item.owner) continue;
-      if (isLikelyBurnWallet(item.owner)) continue;
+
+      const percent =
+        totalSupplyUi > 0 ? (item.amount / totalSupplyUi) * 100 : 0;
+
+      if (isLikelyBurnWallet(item.owner)) {
+        excludedAccounts.push({
+          address: item.owner,
+          amount: item.amount,
+          percent,
+          reason: "burn_wallet"
+        });
+        continue;
+      }
 
       const excludedLabel = getExcludedOwnerLabel(item.owner);
       if (excludedLabel) {
-        console.log(
-          `[HOLDER] Excluding owner ${item.owner} (${excludedLabel}) for ${mintAddress}`
-        );
+        excludedAccounts.push({
+          address: item.owner,
+          amount: item.amount,
+          percent,
+          reason: excludedLabel
+        });
         continue;
       }
 
       if (item.isLikelyLpOrProtocol) {
-        console.log(
-          `[HOLDER] Excluding token account ${item.tokenAccountAddress} as likely LP/protocol for ${mintAddress}`
-        );
+        excludedAccounts.push({
+          address: item.owner,
+          amount: item.amount,
+          percent,
+          reason: item.autoDetectionReasons.join(", ")
+        });
         continue;
       }
 
-      if (isLikelyNonUserOwner(item.owner)) continue;
+      if (isLikelyNonUserOwner(item.owner)) {
+        excludedAccounts.push({
+          address: item.owner,
+          amount: item.amount,
+          percent,
+          reason: "non_user_owner"
+        });
+        continue;
+      }
 
       const current = groupedByOwner.get(item.owner) ?? 0;
       groupedByOwner.set(item.owner, current + item.amount);
@@ -288,31 +390,41 @@ export async function fetchHolderAnalysis(
     const largestHolderPercent =
       groupedWallets.length > 0 ? groupedWallets[0].percentage : null;
 
-    const top10Wallets = groupedWallets.slice(0, 10);
+    if (largestHolderPercent && largestHolderPercent > 25) {
+      console.log(
+        `[HOLDER WARNING] Large holder detected (${largestHolderPercent}%) — likely LP/exchange not excluded for ${mintAddress}`
+      );
+    }
+
+    const topHolders = groupedWallets.slice(0, 10).map((wallet) => ({
+      address: wallet.owner,
+      amount: wallet.amount,
+      percent: wallet.percentage
+    }));
 
     const top10HoldingPercent =
-      top10Wallets.length > 0
-        ? top10Wallets.reduce((sum, wallet) => sum + wallet.percentage, 0)
+      topHolders.length > 0
+        ? topHolders.reduce((sum, holder) => sum + holder.percent, 0)
         : null;
 
-    const devHoldingPercent = devWalletAddress
+    const devHoldingPercent = options?.devWalletAddress
       ? await getKnownDevHoldingPercent(
-          connection,
           mintAddress,
-          devWalletAddress,
+          options.devWalletAddress,
           totalSupplyUi
         )
       : null;
 
     return {
       holderCount: groupedWallets.length,
-      devHoldingPercent,
       largestHolderPercent,
       top10HoldingPercent,
-      top10Wallets
+      topHolders,
+      excludedAccounts,
+      devHoldingPercent
     };
   } catch (error) {
-    console.error(`❌ QuickNode holder analysis error for ${mintAddress}:`, error);
+    console.error(`❌ Holder analysis error for ${mintAddress}:`, error);
     return emptyHolderAnalysis();
   }
 }

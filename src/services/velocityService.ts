@@ -10,7 +10,7 @@ export async function calculateVelocityBreakout(
       .limit(2)
       .lean();
 
-    if (!snapshots.length) return;
+    if (snapshots.length < 2) return;
 
     const current = snapshots[0];
     const previous = snapshots[1];

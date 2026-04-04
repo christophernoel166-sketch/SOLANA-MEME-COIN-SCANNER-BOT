@@ -12,11 +12,12 @@ export async function calculateMomentum(
 
     if (!snapshot) return;
 
-    const earlyBuyers = await TokenEarlyBuyer.find({ mintAddress });
+    // ✅ Only count instead of loading all documents
+    const walletVelocity = await TokenEarlyBuyer.countDocuments({
+      mintAddress
+    });
 
     const buyVelocity = snapshot.buys ?? 0;
-
-    const walletVelocity = earlyBuyers.length;
 
     const liquidityAcceleration = snapshot.liquidityUsd ?? 0;
 

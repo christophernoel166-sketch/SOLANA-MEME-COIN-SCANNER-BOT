@@ -10,280 +10,330 @@ import { sendTelegramSignal } from "./telegramService";
 import { getTokenAgeMinutes } from "../utils/tokenUtils";
 import { getSniperCount } from "./sniperIntelService";
 
-export async function runSignalEngine(): Promise<void> {
+type SignalProfile = {
+  name: string;
+  minAge: number;
+  maxAge: number;
+  description: string;
+
+  minLiquidityUsd: number;
+  minMarketCap: number;
+  minVolume5m: number;
+  requireBuyPressure: boolean;
+
+  maxLargestHolderPercent: number;
+  maxTop10HoldingPercent: number;
+
+  maxBotDegenCount: number;
+  maxRatTraderCount: number;
+  minSniperCount: number;
+  maxSniperCount: number;
+
+  maxBundleScore: number;
+  maxBundledWalletCount: number;
+  requireBundleNotFlagged: boolean;
+
+  minMomentumScore: number;
+  minBreakoutScore: number;
+  requireVelocityFlagged: boolean;
+};
+
+export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
   try {
     console.log("🧠 Running signal engine...");
+    if (profile) {
+      console.log(`🧠 Running signal engine for profile: ${profile.name}`);
+    }
 
     const boostedSet = await fetchBoostedTokenSet();
-
     console.log(`🚀 Boosted tokens loaded: ${boostedSet.size}`);
 
     const snapshots = await TokenSnapshot.find({
-  signalSent: false,
-  enrichmentComplete: true
-})
-  .sort({ createdAt: -1 })
-  .limit(30);
+      signalSent: false,
+      enrichmentComplete: true
+    })
+      .sort({ createdAt: -1 })
+      .limit(30);
 
     for (const snap of snapshots) {
       const age = getTokenAgeMinutes(snap.pairCreatedAt);
-
       if (age === null) continue;
+
+      if (profile) {
+        if (age < profile.minAge || age > profile.maxAge) {
+          console.log(`⏭️ Skipping ${snap.mintAddress} (${profile.name})`);
+          continue;
+        }
+      }
 
       const [walletStats, bundleStats, fundingCluster, momentum, velocity] =
         await Promise.all([
-          TokenWalletStats.findOne({
-            mintAddress: snap.mintAddress
-          }).lean(),
-
-          TokenBundleStats.findOne({
-            mintAddress: snap.mintAddress
-          }).lean(),
-
-          TokenFundingCluster.findOne({
-            mintAddress: snap.mintAddress
-          }).lean(),
-
-          TokenMomentum.findOne({
-            mintAddress: snap.mintAddress
-          }).lean(),
-
-          TokenVelocity.findOne({
-            mintAddress: snap.mintAddress
-          }).lean()
+          TokenWalletStats.findOne({ mintAddress: snap.mintAddress }).lean(),
+          TokenBundleStats.findOne({ mintAddress: snap.mintAddress }).lean(),
+          TokenFundingCluster.findOne({ mintAddress: snap.mintAddress }).lean(),
+          TokenMomentum.findOne({ mintAddress: snap.mintAddress }).lean(),
+          TokenVelocity.findOne({ mintAddress: snap.mintAddress }).lean()
         ]);
 
       const sniperCount = await getSniperCount(snap.mintAddress);
 
       const momentumScore = momentum?.momentumScore ?? 0;
-
       const breakoutScore = velocity?.breakoutScore ?? 0;
       const velocityFlagged = velocity?.flagged ?? false;
 
       const smartDegenCount = walletStats?.smartDegenCount ?? 0;
-      const smartDegenHoldingPercent =
-        walletStats?.smartDegenHoldingPercent ?? 0;
-
       const botDegenCount = walletStats?.botDegenCount ?? 0;
-      const botDegenHoldingPercent =
-        walletStats?.botDegenHoldingPercent ?? 0;
-
       const ratTraderCount = walletStats?.ratTraderCount ?? 0;
-      const ratTraderHoldingPercent =
-        walletStats?.ratTraderHoldingPercent ?? 0;
-
-      const alphaCallerCount = walletStats?.alphaCallerCount ?? 0;
-      const pumpReplyCount = walletStats?.pumpReplyCount ?? null;
 
       const bundleScore = bundleStats?.bundleScore ?? 0;
       const bundledWalletCount = bundleStats?.bundledWalletCount ?? 0;
       const bundleFlagged = bundleStats?.flagged ?? false;
 
-      const fundingClusterScore =
-        fundingCluster?.fundingClusterScore ?? 0;
-
-      const largestFundingClusterSize =
-        fundingCluster?.largestFundingClusterSize ?? 0;
-
-      const fundingClusterFlagged =
-        fundingCluster?.flagged ?? false;
-
       const isBoosted = boostedSet.has(snap.mintAddress);
 
-      const hasLiquidity =
+      // 🔥 ANTI-FAKE METRICS
+      const buySellRatio =
+        snap.sells && snap.sells > 0
+          ? (snap.buys ?? 0) / snap.sells
+          : (snap.buys ?? 0);
+
+      const hasStrongBuyPressure = buySellRatio >= 1.5;
+
+      const walletParticipation =
+        (snap.buys ?? 0) > 0 ? sniperCount / (snap.buys ?? 0) : 0;
+
+      const hasHealthyParticipation = walletParticipation >= 0.02;
+
+      // 🔥 RUG-RISK METRICS
+      const sellBuyRatio =
+        (snap.buys ?? 0) > 0
+          ? (snap.sells ?? 0) / (snap.buys ?? 0)
+          : (snap.sells ?? 0);
+
+      const hasHeavySellPressure = sellBuyRatio >= 0.9;
+
+      const hasLiquidityFragility =
         typeof snap.liquidityUsd === "number" &&
-        snap.liquidityUsd >= 15000;
+        snap.liquidityUsd < (profile?.minLiquidityUsd ?? 15000) * 1.2;
 
-      const hasMarketCap =
-        typeof snap.marketCap === "number" &&
-        snap.marketCap >= 30000;
+      const hasLargestHolderData =
+        typeof snap.largestHolderPercent === "number";
 
-      const hasVolume =
-        typeof snap.volume5m === "number" &&
-        snap.volume5m >= 2000;
-
-      const hasBuyPressure =
-        typeof snap.buys === "number" &&
-        typeof snap.sells === "number" &&
-        snap.buys > snap.sells;
-
-      const isFresh = age < 40;
-
-const hasLargestHolderData =
-  typeof snap.largestHolderPercent === "number";
       const hasSafeLargestHolder =
-  typeof snap.largestHolderPercent === "number" &&
-  snap.largestHolderPercent <= 15;
+        hasLargestHolderData &&
+        snap.largestHolderPercent <=
+          (profile?.maxLargestHolderPercent ?? 15);
 
       const hasSafeTop10Holding =
         typeof snap.top10HoldingPercent === "number" &&
-        snap.top10HoldingPercent < 20;
+        snap.top10HoldingPercent <
+          (profile?.maxTop10HoldingPercent ?? 20);
 
-      const hasSmartWalletSupport = smartDegenCount >= 0;
+      const hasHealthyDistribution =
+        hasSafeLargestHolder && hasSafeTop10Holding;
 
-      const hasSafeBotCount = botDegenCount <= 6;
+      const hasHolderFragility =
+        (typeof snap.largestHolderPercent === "number" &&
+          snap.largestHolderPercent >=
+            (profile?.maxLargestHolderPercent ?? 15) * 0.85) ||
+        (typeof snap.top10HoldingPercent === "number" &&
+          snap.top10HoldingPercent >=
+            (profile?.maxTop10HoldingPercent ?? 20) * 0.9);
 
-      const hasSafeRatCount = ratTraderCount <= 10;
+      const hasMomentumFailure =
+        momentumScore < (profile?.minMomentumScore ?? 40) &&
+        breakoutScore < (profile?.minBreakoutScore ?? 50);
+
+      const hasDangerousBundle =
+        bundleFlagged ||
+        bundleScore >= (profile?.maxBundleScore ?? 7) ||
+        bundledWalletCount >= (profile?.maxBundledWalletCount ?? 5);
+
+      let rugRiskScore = 0;
+      const rugRiskReasons: string[] = [];
+
+      if (hasHeavySellPressure) {
+        rugRiskScore += 25;
+        rugRiskReasons.push("heavy_sell_pressure");
+      }
+
+      if (hasLiquidityFragility) {
+        rugRiskScore += 20;
+        rugRiskReasons.push("fragile_liquidity");
+      }
+
+      if (hasHolderFragility) {
+        rugRiskScore += 25;
+        rugRiskReasons.push("holder_fragility");
+      }
+
+      if (hasMomentumFailure) {
+        rugRiskScore += 15;
+        rugRiskReasons.push("momentum_failure");
+      }
+
+      if (hasDangerousBundle) {
+        rugRiskScore += 25;
+        rugRiskReasons.push("dangerous_bundle");
+      }
+
+      const hasHighRugRisk = rugRiskScore >= 40;
+
+      // MARKET CHECKS
+      const hasLiquidity =
+        typeof snap.liquidityUsd === "number" &&
+        snap.liquidityUsd >= (profile?.minLiquidityUsd ?? 15000);
+
+      const hasMarketCap =
+        typeof snap.marketCap === "number" &&
+        snap.marketCap >= (profile?.minMarketCap ?? 30000);
+
+      const hasVolume =
+        typeof snap.volume5m === "number" &&
+        snap.volume5m >= (profile?.minVolume5m ?? 2000);
+
+      const hasBuyPressure =
+        !profile?.requireBuyPressure ||
+        (
+          typeof snap.buys === "number" &&
+          typeof snap.sells === "number" &&
+          snap.buys > snap.sells &&
+          hasStrongBuyPressure
+        );
+
+      const hasSafeBotCount =
+        botDegenCount <= (profile?.maxBotDegenCount ?? 6);
+
+      const hasSafeRatCount =
+        ratTraderCount <= (profile?.maxRatTraderCount ?? 10);
 
       const hasSafeSniperCount =
-  sniperCount >= 2 && sniperCount <= 15;
+        sniperCount >= (profile?.minSniperCount ?? 2) &&
+        sniperCount <= (profile?.maxSniperCount ?? 15);
 
-      const hasMomentum = momentumScore >= 40;
+      const hasMomentum =
+        momentumScore >= (profile?.minMomentumScore ?? 40);
 
-      const hasVelocityBreakout =
-        breakoutScore >= 50 && velocityFlagged;
-
+      const hasVelocityBreakout = profile?.requireVelocityFlagged
+        ? breakoutScore >= (profile?.minBreakoutScore ?? 50) &&
+          velocityFlagged &&
+          momentumScore >= 20
+        : breakoutScore >= (profile?.minBreakoutScore ?? 50);
 
       const hasSafeBundle =
-        !bundleFlagged &&
-        bundleScore < 7 &&
-        bundledWalletCount < 5;
+        (!profile?.requireBundleNotFlagged || !bundleFlagged) &&
+        bundleScore < (profile?.maxBundleScore ?? 7) &&
+        bundledWalletCount < (profile?.maxBundledWalletCount ?? 5) &&
+        (profile?.name === "fresh_meme" ? bundleScore <= 5 : true);
 
-const failureReasons: string[] = [];
+      const failureReasons: string[] = [];
 
-if (!isFresh) failureReasons.push("not_fresh");
-if (!hasLiquidity) failureReasons.push("low_liquidity");
-if (!hasMarketCap) failureReasons.push("low_market_cap");
-if (!hasVolume) failureReasons.push("low_volume");
-if (!hasBuyPressure) failureReasons.push("no_buy_pressure");
+      if (!hasLiquidity) failureReasons.push("low_liquidity");
+      if (!hasMarketCap) failureReasons.push("low_market_cap");
+      if (!hasVolume) failureReasons.push("low_volume");
+      if (!hasBuyPressure) failureReasons.push("weak_buy_pressure");
+      if (!hasHealthyParticipation) {
+        failureReasons.push("low_wallet_participation");
+      }
 
-if (!hasLargestHolderData) {
-  failureReasons.push("largest_holder_unknown");
-} else if (!hasSafeLargestHolder) {
-  failureReasons.push("largest_holder_dominance");
-}
-if (!hasSafeTop10Holding) failureReasons.push("high_top10_concentration");
+      if (!hasLargestHolderData) {
+        failureReasons.push("largest_holder_unknown");
+      } else if (!hasSafeLargestHolder) {
+        failureReasons.push("largest_holder_dominance");
+      }
 
-if (!hasSmartWalletSupport) failureReasons.push("no_smart_wallet_support");
-if (!hasSafeBotCount) failureReasons.push("too_many_bots");
-if (!hasSafeRatCount) failureReasons.push("too_many_rat_traders");
+      if (!hasHealthyDistribution) {
+        failureReasons.push("bad_holder_distribution");
+      }
 
-if (!hasSafeBundle) failureReasons.push("bundle_risk");
-
-if (!hasSafeSniperCount) failureReasons.push("unsafe_sniper_count");
-
-if (!hasMomentum) failureReasons.push("low_momentum");
-
-if (!hasVelocityBreakout) failureReasons.push("no_velocity_breakout");
-
+      if (!hasSafeBotCount) failureReasons.push("too_many_bots");
+      if (!hasSafeRatCount) failureReasons.push("too_many_rats");
+      if (!hasSafeBundle) failureReasons.push("bundle_risk");
+      if (!hasSafeSniperCount) {
+        failureReasons.push("unsafe_sniper_count");
+      }
+      if (!hasMomentum) failureReasons.push("low_momentum");
+      if (!hasVelocityBreakout) {
+        failureReasons.push("no_velocity_breakout");
+      }
+      if (hasHighRugRisk) {
+        failureReasons.push("high_rug_risk");
+      }
 
       const isMatch =
-        isFresh &&
         hasLiquidity &&
         hasMarketCap &&
         hasVolume &&
         hasBuyPressure &&
-        hasSafeLargestHolder &&
-        hasSafeTop10Holding &&
-        hasSmartWalletSupport &&
+        hasHealthyParticipation &&
+        hasHealthyDistribution &&
         hasSafeBotCount &&
         hasSafeRatCount &&
         hasSafeBundle &&
         hasSafeSniperCount &&
         hasMomentum &&
-        hasVelocityBreakout;
+        hasVelocityBreakout &&
+        !hasHighRugRisk;
 
       console.log("🧪 Signal check:", {
-        mintAddress: snap.mintAddress,
+        profile: profile?.name,
+        mint: snap.mintAddress,
         age,
-        liquidityUsd: snap.liquidityUsd,
-        marketCap: snap.marketCap,
-        volume5m: snap.volume5m,
-        buys: snap.buys,
-        sells: snap.sells,
+        buySellRatio,
+        walletParticipation,
+        hasStrongBuyPressure,
+        hasHealthyParticipation,
+        hasHealthyDistribution,
 
-         largestHolderPercent: snap.largestHolderPercent,
-        devHoldingPercent: snap.devHoldingPercent,
-        top10HoldingPercent: snap.top10HoldingPercent,
+        sellBuyRatio,
+        hasHeavySellPressure,
+        hasLiquidityFragility,
+        hasHolderFragility,
+        hasMomentumFailure,
+        hasDangerousBundle,
+        rugRiskScore,
+        rugRiskReasons,
 
-
-        smartDegenCount,
-        botDegenCount,
-        ratTraderCount,
-
-        sniperCount,
-
+        largest: snap.largestHolderPercent,
+        top10: snap.top10HoldingPercent,
         bundleScore,
-        bundledWalletCount,
-        bundleFlagged,
-
-        fundingClusterScore,
-        largestFundingClusterSize,
-
+        sniperCount,
         momentumScore,
-
         breakoutScore,
-        velocityFlagged,
-        hasVelocityBreakout,
-
-        isBoosted,
-        hasLiquidity,
-        hasMarketCap,
-        hasVolume,
-        hasBuyPressure,
-        isFresh,
-        hasSmartWalletSupport,
-        hasSafeBotCount,
-        hasSafeRatCount,
-        hasSafeSniperCount,
-        hasMomentum,
-
         isMatch
       });
 
       if (!isMatch) {
-  console.log(
-    `❌ Signal rejected for ${snap.mintAddress}:`,
-    failureReasons
-  );
-  continue;
-}
+        console.log("❌ Rejected:", failureReasons);
+        continue;
+      }
 
- const message = `
-🚨 *BOOSTED MEME SIGNAL*
+      const message = `
+🚀 *${profile?.name.toUpperCase()} SIGNAL*
 
-*Market*
-• Age: ${age} minutes
-• Liquidity: $${snap.liquidityUsd?.toLocaleString()}
-• Market Cap: $${snap.marketCap?.toLocaleString()}
-• Volume (5m): $${snap.volume5m?.toLocaleString()}
-• Buys / Sells: ${snap.buys} / ${snap.sells}
-
-*Holder Safety*
-• Largest Holder: ${snap.largestHolderPercent?.toFixed(2)}%
-• Top 10 Holding: ${snap.top10HoldingPercent?.toFixed(2)}%
-
-*Wallet Intelligence*
-• Smart Degens: ${smartDegenCount}
-• Bot Degens: ${botDegenCount}
-• Rat Traders: ${ratTraderCount}
-• Alpha Callers: ${alphaCallerCount}
-• Sniper Wallets: ${sniperCount}
-
-*Risk / Structure*
-• Bundle Score: ${bundleScore}
-• Bundled Wallets: ${bundledWalletCount}
-• Funding Cluster Score: ${fundingClusterScore}
-• Largest Funding Cluster: ${largestFundingClusterSize}
-
-*Momentum*
-• Momentum Score: ${momentumScore}
-• Velocity Breakout Score: ${breakoutScore}
-
-*Status*
-• Boosted: ${isBoosted ? "YES" : "NO"}
-
-*CA*
+CA:
 \`${snap.mintAddress}\`
+
+Liquidity: $${snap.liquidityUsd}
+MarketCap: $${snap.marketCap}
+Volume(5m): $${snap.volume5m}
+
+Holders:
+Largest: ${snap.largestHolderPercent?.toFixed(2)}%
+Top10: ${snap.top10HoldingPercent?.toFixed(2)}%
+
+Momentum: ${momentumScore}
+Breakout: ${breakoutScore}
+
+Rug Risk Score: ${rugRiskScore}
 `;
 
-      await sendTelegramSignal(message);
+      await sendTelegramSignal(message, profile?.name);
 
       snap.signalSent = true;
-
       await snap.save();
 
-      console.log("🚨 Signal triggered:", snap.mintAddress);
+      console.log("🚨 SIGNAL TRIGGERED:", snap.mintAddress);
     }
   } catch (error) {
     console.error("Signal engine error:", error);
