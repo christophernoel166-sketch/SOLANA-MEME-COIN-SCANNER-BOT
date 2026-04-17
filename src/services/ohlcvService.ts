@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+
 import { getCandles } from "./candleEngine";
 
 export type Candle = {
