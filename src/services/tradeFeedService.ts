@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+
 import { processTrade } from "./candleEngine";
 import TokenSnapshot from "../models/TokenSnapshot";
 
