@@ -21,6 +21,7 @@ import TokenFundingCluster from "./models/TokenFundingCluster";
 import { detectFundingClusters } from "./services/fundingClusterService";
 import TokenEarlyBuyer from "./models/TokenEarlyBuyer";
 import { getSniperCount } from "./services/sniperIntelService";
+import { startTradeFeed } from "./services/tradeFeedService";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -54,6 +55,17 @@ app.get("/test-signal", async (_req, res) => {
     res.status(500).send("Failed to send signal");
   }
 });
+
+import { getCandles } from "./services/candleEngine";
+
+setInterval(() => {
+  const testMint = "7WrBUPWHY4Q5ss2c3Ag4f89LZKBp4hMmj7huMqCrpump";
+
+  const candles = getCandles(testMint, 5);
+
+  console.log("📊 TEST CANDLES:", candles);
+}, 10000);
+
 
 /*
 |--------------------------------------------------------------------------
@@ -565,6 +577,7 @@ async function startServer(): Promise<void> {
   startDiscoveryJob();
   startEnrichmentJob();
   startSignalJob();
+startTradeFeed();
 }
 
 startServer();

@@ -80,7 +80,7 @@ export function startEnrichmentJob(): void {
           typeof liquidityUsd === "number" && liquidityUsd >= 15000;
 
         const hasMarketCap =
-          typeof marketCap === "number" && marketCap >= 60000;
+          typeof marketCap === "number" && marketCap >= 30000;
 
         const hasVolume =
           typeof volume5m === "number" && volume5m >= 3000;

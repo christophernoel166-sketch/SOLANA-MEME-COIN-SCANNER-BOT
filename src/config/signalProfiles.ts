@@ -1,32 +1,32 @@
 export const SIGNAL_PROFILES = [
   {
-    name: "fresh_meme",
-    minAge: 0,
-    maxAge: 59,
-    description: "0-59 minutes (ultra early plays)",
+  name: "fresh_meme",
+  minAge: 0,
+  maxAge: 59,
+  description: "0-59 minutes (ultra early plays)",
 
-    minLiquidityUsd: 15000,
-    minMarketCap: 30000,
-    minVolume5m: 2000,
-    requireBuyPressure: true,
+  minLiquidityUsd: 15000,
+  minMarketCap: 30000,
+  minVolume5m: 2000,
+  requireBuyPressure: true,
 
-    maxLargestHolderPercent: 5,
-    maxTop10HoldingPercent: 15,
+  maxLargestHolderPercent: 18,
+  maxTop10HoldingPercent: 25,
 
-    maxBotDegenCount: 6,
-    maxRatTraderCount: 10,
-    minSniperCount: 2,
-    maxSniperCount: 15,
+  maxBotDegenCount: 8,
+  maxRatTraderCount: 12,
+  minSniperCount: 0,
+  maxSniperCount: 20,
 
-    maxBundleScore: 7,
-    maxBundledWalletCount: 5,
-    requireBundleNotFlagged: true,
+  maxBundleScore: 10,
+  maxBundledWalletCount: 7,
+  requireBundleNotFlagged: false,
 
-    minMomentumScore: 40,
-    minBreakoutScore: 50,
-    requireVelocityFlagged: true
-  },
-  {
+  minMomentumScore: 15,
+  minBreakoutScore: 15,
+  requireVelocityFlagged: false
+},
+{
     name: "early_runner",
     minAge: 60,
     maxAge: 240,
