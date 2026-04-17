@@ -54,7 +54,7 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
     const snapshots = await TokenSnapshot.find({
       signalSent: false,
       enrichmentComplete: true,
-      pairCreatedAt: { $ne: null }
+      pairCreatedAt: { $ne: null },
     })
       .sort({ createdAt: -1 })
       .limit(80);
@@ -84,7 +84,7 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
           TokenBundleStats.findOne({ mintAddress: snap.mintAddress }).lean(),
           TokenFundingCluster.findOne({ mintAddress: snap.mintAddress }).lean(),
           TokenMomentum.findOne({ mintAddress: snap.mintAddress }).lean(),
-          TokenVelocity.findOne({ mintAddress: snap.mintAddress }).lean()
+          TokenVelocity.findOne({ mintAddress: snap.mintAddress }).lean(),
         ]);
 
       const sniperCount = await getSniperCount(snap.mintAddress);
@@ -161,7 +161,7 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
             (profile?.maxTop10HoldingPercent ?? 20) * 0.9);
 
       const hasMomentumFailure =
-        momentumScore < (profile?.minMomentumScore ?? 40) &&
+        momentumScore < 50 &&
         breakoutScore < (profile?.minBreakoutScore ?? 50);
 
       const hasDangerousBundle =
@@ -197,7 +197,7 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
         rugRiskReasons.push("dangerous_bundle");
       }
 
-      const hasHighRugRisk = rugRiskScore >= 30;
+      const hasHighRugRisk = rugRiskScore > 30;
 
       const hasLiquidity =
         typeof snap.liquidityUsd === "number" &&
@@ -213,12 +213,10 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
 
       const hasBuyPressure =
         !profile?.requireBuyPressure ||
-        (
-          typeof snap.buys === "number" &&
+        (typeof snap.buys === "number" &&
           typeof snap.sells === "number" &&
           snap.buys > snap.sells &&
-          hasStrongBuyPressure
-        );
+          hasStrongBuyPressure);
 
       const hasSafeBotCount =
         botDegenCount <= (profile?.maxBotDegenCount ?? 6);
@@ -230,8 +228,8 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
         sniperCount >= (profile?.minSniperCount ?? 2) &&
         sniperCount <= (profile?.maxSniperCount ?? 15);
 
-      const hasMomentum =
-        momentumScore >= (profile?.minMomentumScore ?? 40);
+      const hasMomentum = momentumScore >= 50;
+      const hasLowMomentum = momentumScore < 50;
 
       const hasVelocityBreakout = profile?.requireVelocityFlagged
         ? breakoutScore >= (profile?.minBreakoutScore ?? 50) &&
@@ -248,9 +246,11 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
       const scoreBreakdown: Record<string, number> = {};
       let totalScore = 0;
 
-      // Score-impacting conditions tracked as reasons only
+      // Hard rejection conditions
       if (!hasLiquidity) failureReasons.push("low_liquidity");
       if (!hasLargestHolderData) failureReasons.push("largest_holder_unknown");
+      if (hasLowMomentum) failureReasons.push("low_momentum");
+      if (hasLiquidityFragility) failureReasons.push("liquidity_fragility");
       if (hasHighRugRisk) failureReasons.push("high_rug_risk");
 
       // Market quality: 25
@@ -328,7 +328,6 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
         totalScore += 10;
         scoreBreakdown.momentum = 10;
       } else {
-        failureReasons.push("low_momentum");
         scoreBreakdown.momentum = 0;
       }
 
@@ -390,8 +389,15 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
       if (totalScore > 100) totalScore = 100;
       if (totalScore < 0) totalScore = 0;
 
-      // Score-only decision
-      const isMatch = totalScore >= PASS_SCORE;
+      // Hard rejection gate
+      const hasHardReject =
+        hasLowMomentum ||
+        hasLiquidityFragility ||
+        hasHighRugRisk;
+
+      const isMatch =
+        totalScore >= PASS_SCORE &&
+        !hasHardReject;
 
       console.log("🧪 Signal check:", {
         profile: profile?.name,
@@ -429,7 +435,8 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
         totalScore,
         passScore: PASS_SCORE,
         scoreBreakdown,
-        isMatch
+        hasHardReject,
+        isMatch,
       });
 
       if (!isMatch) {
@@ -437,15 +444,27 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
         continue;
       }
 
-      console.log(`📊 Starting chart entry analysis for ${snap.mintAddress}`);
+      let entry;
 
-let entry;
+      try {
+        entry = await analyzeChartEntry(snap.mintAddress);
+        console.log(`✅ Chart entry analysis complete for ${snap.mintAddress}`, entry);
+      } catch (error) {
+        console.error(`❌ Chart entry analysis failed for ${snap.mintAddress}`, error);
+        continue;
+      }
 
-try {
-  entry = await analyzeChartEntry(snap.mintAddress);
-  console.log(`✅ Chart entry analysis complete for ${snap.mintAddress}`, entry);
-} catch (error) {
-  console.error(`❌ Chart entry analysis failed for ${snap.mintAddress}`, error);
+if (
+  entry.trend !== "bullish" ||
+  entry.action !== "enter_now" ||
+  entry.confidence < 6
+) {
+  console.log(`❌ Rejected ${snap.mintAddress}: weak chart setup`, {
+    trend: entry.trend,
+    action: entry.action,
+    confidence: entry.confidence,
+    reasons: entry.reasons,
+  });
   continue;
 }
 
@@ -468,15 +487,15 @@ Market
 
 Holders
 • Largest: ${
-  typeof snap.largestHolderPercent === "number"
-    ? snap.largestHolderPercent.toFixed(2)
-    : "N/A"
-}%
+        typeof snap.largestHolderPercent === "number"
+          ? snap.largestHolderPercent.toFixed(2)
+          : "N/A"
+      }%
 • Top10: ${
-  typeof snap.top10HoldingPercent === "number"
-    ? snap.top10HoldingPercent.toFixed(2)
-    : "N/A"
-}%
+        typeof snap.top10HoldingPercent === "number"
+          ? snap.top10HoldingPercent.toFixed(2)
+          : "N/A"
+      }%
 
 Structure
 • Bundle Score: ${bundleScore}
@@ -501,17 +520,33 @@ Risk
 • Invalidation: ${entry.invalidationLevel?.toFixed(6)}
 `;
 
-      await sendTelegramSignal(message, profile?.name);
+          const locked = await TokenSnapshot.findOneAndUpdate(
+      {
+        _id: snap._id,
+        signalSent: false,
+      },
+      {
+        $set: { signalSent: true },
+      },
+      { new: true }
+    );
 
-      snap.signalSent = true;
-      await snap.save();
-
-      console.log("🚨 SIGNAL TRIGGERED:", snap.mintAddress, {
-        totalScore,
-        profile: profile?.name
-      });
+    if (!locked) {
+      console.log(`⚠️ Signal already sent or locked for ${snap.mintAddress}`);
+      continue;
     }
-  } catch (error) {
-    console.error("Signal engine error:", error);
-  }
+
+    await sendTelegramSignal(message, profile?.name);
+
+    console.log("🚨 SIGNAL TRIGGERED:", snap.mintAddress, {
+      totalScore,
+      profile: profile?.name,
+    });
+  } // ← closes: for (const snap ...)
+  
+} // ← closes: try block
+
+catch (error) {
+  console.error("Signal engine error:", error);
 }
+} // ← closes: runSignalEngine
