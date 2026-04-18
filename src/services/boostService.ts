@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const DEX_BOOSTS_URL = "https://api.dexscreener.com/token-boosts/latest/v1";
+const BOOST_CACHE_TTL_MS = 60 * 1000; // 60 seconds
 
 export interface DexBoostedToken {
   url?: string;
@@ -12,6 +13,11 @@ export interface DexBoostedToken {
   header?: string | null;
   description?: string | null;
 }
+
+// ✅ In-memory cache
+let boostedTokenCache: DexBoostedToken[] = [];
+let boostedTokenSetCache = new Set<string>();
+let boostedCacheTimestamp = 0;
 
 export async function fetchBoostedTokens(): Promise<DexBoostedToken[]> {
   try {
@@ -42,6 +48,14 @@ export async function fetchBoostedTokens(): Promise<DexBoostedToken[]> {
 }
 
 export async function fetchBoostedTokenSet(): Promise<Set<string>> {
+  const now = Date.now();
+
+  // ✅ Serve from cache if fresh
+  if (now - boostedCacheTimestamp < BOOST_CACHE_TTL_MS && boostedTokenSetCache.size > 0) {
+    console.log("⚡ Using cached boosted token set");
+    return boostedTokenSetCache;
+  }
+
   const boostedTokens = await fetchBoostedTokens();
 
   const boostedSet = new Set<string>();
@@ -50,6 +64,11 @@ export async function fetchBoostedTokenSet(): Promise<Set<string>> {
     if (!token.tokenAddress) continue;
     boostedSet.add(token.tokenAddress);
   }
+
+  // ✅ Refresh cache
+  boostedTokenCache = boostedTokens;
+  boostedTokenSetCache = boostedSet;
+  boostedCacheTimestamp = now;
 
   return boostedSet;
 }

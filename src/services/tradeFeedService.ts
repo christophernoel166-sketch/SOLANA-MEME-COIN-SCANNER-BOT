@@ -2,8 +2,8 @@
 import { processTrade } from "./candleEngine";
 import TokenSnapshot from "../models/TokenSnapshot";
 
-const POLL_INTERVAL = 5000;
-const PER_TOKEN_DELAY_MS = 250;
+const POLL_INTERVAL = 15000;
+const PER_TOKEN_DELAY_MS = 1200;
 
 // keep a stable fallback price per mint
 const fallbackPriceCache = new Map<string, number>();
@@ -55,10 +55,14 @@ function sleep(ms: number): Promise<void> {
 // 🔹 GET TOKENS TO TRACK
 // ============================
 async function getActiveTokens(): Promise<SnapshotLike[]> {
-  const tokens = await TokenSnapshot.find({ signalSent: false })
-    .sort({ createdAt: -1 })
-    .limit(20)
-    .lean();
+  const tokens = await TokenSnapshot.find({
+  signalSent: false,
+  enrichmentComplete: true,
+  pairCreatedAt: { $ne: null }
+})
+  .sort({ createdAt: -1 }) // newest tokens first
+  .limit(5)                // reduce load
+  .lean();
 
   const deduped = new Map<string, SnapshotLike>();
 
