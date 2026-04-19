@@ -60,23 +60,41 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
       .limit(80);
 
     const filteredSnapshots = snapshots.filter((snap) => {
-      const age = getTokenAgeMinutes(snap.pairCreatedAt);
-      if (age === null) return false;
+  const age = getTokenAgeMinutes(snap.pairCreatedAt);
+  if (age === null) return false;
 
-      if (profile) {
-        return age >= profile.minAge && age <= profile.maxAge;
-      }
+  if (profile) {
+    return age >= profile.minAge && age <= profile.maxAge;
+  }
 
-      return true;
-    });
+  return true;
+});
 
-    console.log(
-      `📊 ${profile?.name ?? "default"} candidates after age filter: ${filteredSnapshots.length}`
-    );
+// 🔹 Deduplicate by mintAddress
+const dedupedByMint = new Map<string, typeof filteredSnapshots[number]>();
 
-    for (const snap of filteredSnapshots) {
-      const age = getTokenAgeMinutes(snap.pairCreatedAt);
-      if (age === null) continue;
+for (const snap of filteredSnapshots) {
+  if (!dedupedByMint.has(snap.mintAddress)) {
+    dedupedByMint.set(snap.mintAddress, snap);
+  }
+}
+
+// 🔹 Final unique list
+const uniqueSnapshots = Array.from(dedupedByMint.values());
+
+// 🔹 Logs
+console.log(
+  `📊 ${profile?.name ?? "default"} candidates after age filter: ${filteredSnapshots.length}`
+);
+
+console.log(
+  `🧹 ${profile?.name ?? "default"} unique candidates after mint dedupe: ${uniqueSnapshots.length}`
+);
+
+// 🔹 IMPORTANT: use uniqueSnapshots here
+for (const snap of uniqueSnapshots) {
+  const age = getTokenAgeMinutes(snap.pairCreatedAt);
+  if (age === null) continue;
 
       const [walletStats, bundleStats, fundingCluster, momentum, velocity] =
         await Promise.all([
@@ -520,28 +538,48 @@ Risk
 • Invalidation: ${entry.invalidationLevel?.toFixed(6)}
 `;
 
-          const locked = await TokenSnapshot.findOneAndUpdate(
-      {
-        _id: snap._id,
-        signalSent: false,
-      },
-      {
-        $set: { signalSent: true },
-      },
-      { new: true }
-    );
+const locked = await TokenSnapshot.findOneAndUpdate(
+  {
+    mintAddress: snap.mintAddress,
+    signalSent: false,
+  },
+  {
+    $set: {
+      signalSent: true,
+      updatedAt: new Date(),
+    },
+  },
+  {
+    sort: { createdAt: -1 },
+    new: true,
+  }
+);
 
-    if (!locked) {
-      console.log(`⚠️ Signal already sent or locked for ${snap.mintAddress}`);
-      continue;
-    }
+if (!locked) {
+  console.log(`⚠️ Signal already sent or locked for ${snap.mintAddress}`);
+  continue;
+}
 
-    await sendTelegramSignal(message, profile?.name);
+// 🔥 CRITICAL: mark ALL remaining duplicates as sent
+await TokenSnapshot.updateMany(
+  {
+    mintAddress: snap.mintAddress,
+    signalSent: false,
+  },
+  {
+    $set: {
+      signalSent: true,
+      updatedAt: new Date(),
+    },
+  }
+);
 
-    console.log("🚨 SIGNAL TRIGGERED:", snap.mintAddress, {
-      totalScore,
-      profile: profile?.name,
-    });
+await sendTelegramSignal(message, profile?.name);
+
+console.log("🚨 SIGNAL TRIGGERED:", snap.mintAddress, {
+  totalScore,
+  profile: profile?.name,
+});
   } // ← closes: for (const snap ...)
   
 } // ← closes: try block
