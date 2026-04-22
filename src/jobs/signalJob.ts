@@ -2,16 +2,11 @@ import { runSignalEngine } from "../services/signalService";
 import { SIGNAL_PROFILES } from "../config/signalProfiles";
 
 const SIGNAL_INTERVAL_MS = 20000;
-const PROFILE_DELAY_MS = 1000;
 
 let isSignalRunning = false;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export function startSignalJob(): void {
-  console.log("🧠 Signal engine started (multi-profile)");
+  console.log("🧠 Signal engine started (fresh_meme only)");
 
   setInterval(async () => {
     if (isSignalRunning) {
@@ -22,10 +17,17 @@ export function startSignalJob(): void {
     isSignalRunning = true;
 
     try {
-      for (const profile of SIGNAL_PROFILES) {
-        await runSignalEngine(profile);
-        await sleep(PROFILE_DELAY_MS);
+      // ✅ ONLY run fresh_meme profile
+      const freshProfile = SIGNAL_PROFILES.find(
+        (profile) => profile.name === "fresh_meme"
+      );
+
+      if (!freshProfile) {
+        console.log("⚠️ fresh_meme profile not found");
+        return;
       }
+
+      await runSignalEngine(freshProfile);
     } catch (error) {
       console.error("Signal job error:", error);
     } finally {
