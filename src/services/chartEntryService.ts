@@ -17,10 +17,11 @@ export type ChartEntryAnalysis = {
   entryMax?: number;
   breakoutLevel?: number;
   invalidationLevel?: number;
+  takeProfitLevel?: number;
+  profitPotentialPct?: number;
   overextended: boolean;
   reasons: string[];
 };
-
 type Candle = {
   time: number;
   open: number;
@@ -236,20 +237,28 @@ export async function analyzeChartEntry(
         ? resistance * 0.97
         : support * 0.95;
 
+const takeProfitLevel = breakoutLevel;
+
+const profitPotentialPct =
+  entryMax > 0 && takeProfitLevel > entryMax
+    ? ((takeProfitLevel - entryMax) / entryMax) * 100
+    : 0;
     // ============================
     // ✅ RESULT
     // ============================
     const result: ChartEntryAnalysis = {
-      action,
-      trend,
-      confidence: clamp(Math.round(confidence), 0, 10),
-      entryMin,
-      entryMax,
-      breakoutLevel,
-      invalidationLevel,
-      overextended,
-      reasons,
-    };
+  action,
+  trend,
+  confidence: clamp(Math.round(confidence), 0, 10),
+  entryMin,
+  entryMax,
+  breakoutLevel,
+  invalidationLevel,
+  takeProfitLevel,
+  profitPotentialPct,
+  overextended,
+  reasons,
+};
 
     console.log(`✅ Chart entry analysis complete for ${mintAddress}`, result);
 
