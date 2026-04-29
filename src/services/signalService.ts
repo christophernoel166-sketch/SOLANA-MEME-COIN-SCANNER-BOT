@@ -10,6 +10,7 @@ import { sendTelegramSignal } from "./telegramService";
 import { getTokenAgeMinutes } from "../utils/tokenUtils";
 import { getSniperCount } from "./sniperIntelService";
 import { analyzeChartEntry } from "./chartEntryService";
+import SentSignal from "../models/SentSignal";
 
 type SignalProfile = {
   name: string;
@@ -486,6 +487,14 @@ if (
   continue;
 }
 
+if ((entry.profitPotentialPct ?? 0) < 30) {
+  console.log(`❌ Rejected ${snap.mintAddress}: TP potential below 30%`, {
+    profitPotentialPct: entry.profitPotentialPct,
+    takeProfitLevel: entry.takeProfitLevel,
+  });
+  continue;
+}
+
       const message = `
 🚀 *${profile?.name?.toUpperCase() ?? "DEFAULT"} SIGNAL*
 
@@ -538,33 +547,25 @@ Risk
 • Invalidation: ${entry.invalidationLevel?.toFixed(6)}
 `;
 
-const locked = await TokenSnapshot.findOneAndUpdate(
-  {
+try {
+  await SentSignal.create({
     mintAddress: snap.mintAddress,
-    signalSent: false,
-  },
-  {
-    $set: {
-      signalSent: true,
-      updatedAt: new Date(),
-    },
-  },
-  {
-    sort: { createdAt: -1 },
-    new: true,
+    profileName: profile?.name ?? "default",
+    sentAt: new Date(),
+  });
+} catch (error: any) {
+  if (error?.code === 11000) {
+    console.log(`⚠️ Signal already sent for ${snap.mintAddress}`);
+    continue;
   }
-);
 
-if (!locked) {
-  console.log(`⚠️ Signal already sent or locked for ${snap.mintAddress}`);
-  continue;
+  throw error;
 }
 
-// 🔥 CRITICAL: mark ALL remaining duplicates as sent
+// Mark all current/future duplicate snapshot rows for this mint as sent
 await TokenSnapshot.updateMany(
   {
     mintAddress: snap.mintAddress,
-    signalSent: false,
   },
   {
     $set: {
