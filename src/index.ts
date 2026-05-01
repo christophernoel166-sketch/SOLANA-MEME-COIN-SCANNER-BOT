@@ -22,6 +22,7 @@ import { detectFundingClusters } from "./services/fundingClusterService";
 import TokenEarlyBuyer from "./models/TokenEarlyBuyer";
 import { getSniperCount } from "./services/sniperIntelService";
 import { startTradeFeed } from "./services/tradeFeedService";
+import { startWatchlistJob } from "./jobs/watchlistJob";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -578,6 +579,7 @@ async function startServer(): Promise<void> {
   startEnrichmentJob();
   startSignalJob();
 startTradeFeed();
+startWatchlistJob();
 }
 
 startServer();

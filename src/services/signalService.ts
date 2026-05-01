@@ -11,6 +11,7 @@ import { getTokenAgeMinutes } from "../utils/tokenUtils";
 import { getSniperCount } from "./sniperIntelService";
 import { analyzeChartEntry } from "./chartEntryService";
 import SentSignal from "../models/SentSignal";
+import SignalWatchlist from "../models/SignalWatchlist";
 
 type SignalProfile = {
   name: string;
@@ -478,12 +479,36 @@ if (
   entry.action !== "enter_now" ||
   entry.confidence < 6
 ) {
-  console.log(`❌ Rejected ${snap.mintAddress}: weak chart setup`, {
+  await SignalWatchlist.updateOne(
+    {
+      mintAddress: snap.mintAddress,
+      profileName: profile?.name ?? "default",
+    },
+    {
+      $set: {
+        status: "watching",
+        score: totalScore,
+        reason: "waiting_for_bullish_chart",
+        lastCheckedAt: new Date(),
+        lastTrend: entry.trend,
+        lastAction: entry.action,
+        lastConfidence: entry.confidence,
+        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+      },
+      $setOnInsert: {
+        firstSeenAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+
+  console.log(`👀 Added/updated watchlist ${snap.mintAddress}`, {
     trend: entry.trend,
     action: entry.action,
     confidence: entry.confidence,
     reasons: entry.reasons,
   });
+
   continue;
 }
 
