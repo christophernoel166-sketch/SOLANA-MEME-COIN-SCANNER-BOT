@@ -409,11 +409,10 @@ for (const snap of uniqueSnapshots) {
       if (totalScore > 100) totalScore = 100;
       if (totalScore < 0) totalScore = 0;
 
-      // Hard rejection gate
       const hasHardReject =
-        hasLowMomentum ||
-        hasLiquidityFragility ||
-        hasHighRugRisk;
+  momentumScore < 40 ||
+  rugRiskScore >30 ||
+  (hasLiquidityFragility && rugRiskScore > 20);
 
       const isMatch =
         totalScore >= PASS_SCORE &&
