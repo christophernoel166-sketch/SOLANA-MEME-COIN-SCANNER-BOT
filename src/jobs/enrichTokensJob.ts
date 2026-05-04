@@ -13,6 +13,7 @@ import { getTokenAgeMinutes } from "../utils/tokenUtils";
 import { trackSniperWallets } from "../services/sniperService";
 import { calculateMomentum } from "../services/momentumService";
 import { calculateVelocityBreakout } from "../services/velocityService";
+import { checkLiquidityLocked } from "../services/liquidityLockService";
 
 let isEnrichmentRunning = false;
 
@@ -92,14 +93,17 @@ export function startEnrichmentJob(): void {
 
         const isBoosted =
           typeof boostsActive === "number" && boostsActive >= 0;
+const liquidityLock = await checkLiquidityLocked(token.mintAddress);
+
+const hasLockedLiquidity = liquidityLock.locked !== false;
 
         const passesMarketFilters =
-          isFresh &&
-          hasLiquidity &&
-          hasMarketCap &&
-          hasVolume &&
-          hasBuyPressure;
-
+  isFresh &&
+  hasLiquidity &&
+  hasMarketCap &&
+  hasVolume &&
+  hasBuyPressure &&
+  hasLockedLiquidity;
         const rejectionReasons: string[] = [];
 
         if (!isFresh) rejectionReasons.push("not_fresh");
@@ -107,6 +111,9 @@ export function startEnrichmentJob(): void {
         if (!hasMarketCap) rejectionReasons.push("low_market_cap");
         if (!hasVolume) rejectionReasons.push("low_volume");
         if (!hasBuyPressure) rejectionReasons.push("no_buy_pressure");
+       if (liquidityLock.locked === false) {
+  rejectionReasons.push("liquidity_not_locked");
+}
 
         console.log("🧪 Market filter check:", {
           mintAddress: token.mintAddress,
@@ -276,6 +283,9 @@ export function startEnrichmentJob(): void {
               priceUsd,
               liquidityUsd,
               marketCap,
+liquidityLocked: liquidityLock.locked,
+liquidityLockSource: liquidityLock.source,
+liquidityLockCheckedAt: new Date(),
 
               buys,
               sells,

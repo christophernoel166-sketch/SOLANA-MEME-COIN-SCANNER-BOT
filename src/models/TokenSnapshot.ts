@@ -6,6 +6,9 @@ export interface ITokenSnapshot extends Document {
 
   priceUsd?: number | null;
   liquidityUsd?: number | null;
+  liquidityLocked?: boolean | null;
+  liquidityLockSource?: string | null;
+  liquidityLockCheckedAt?: Date | null;
   marketCap?: number | null;
 
   buys?: number | null;
@@ -22,7 +25,6 @@ export interface ITokenSnapshot extends Document {
 
   holderLastCheckedAt?: Date | null;
 
-  // ✅ NEW (IMPORTANT)
   topHolders?: {
     address: string;
     amount: number;
@@ -48,90 +50,106 @@ const TokenSnapshotSchema = new Schema<ITokenSnapshot>(
     mintAddress: {
       type: String,
       required: true,
-      index: true
+      index: true,
     },
 
     pairAddress: {
       type: String,
-      default: null
+      default: null,
     },
 
     priceUsd: {
       type: Number,
-      default: null
+      default: null,
     },
 
     liquidityUsd: {
       type: Number,
-      default: null
+      default: null,
+    },
+
+    liquidityLocked: {
+      type: Boolean,
+      default: null,
+      index: true,
+    },
+
+    liquidityLockSource: {
+      type: String,
+      default: null,
+    },
+
+    liquidityLockCheckedAt: {
+      type: Date,
+      default: null,
+      index: true,
     },
 
     marketCap: {
       type: Number,
-      default: null
+      default: null,
     },
 
     buys: {
       type: Number,
-      default: null
+      default: null,
     },
 
     sells: {
       type: Number,
-      default: null
+      default: null,
     },
 
     volume5m: {
       type: Number,
-      default: null
+      default: null,
     },
 
     pairCreatedAt: {
       type: Number,
-      default: null
+      default: null,
     },
 
     boostsActive: {
       type: Number,
-      default: 0
+      default: 0,
     },
 
     holderCount: {
       type: Number,
-      default: null
+      default: null,
     },
 
     largestHolderPercent: {
       type: Number,
-      default: null
+      default: null,
     },
 
     devHoldingPercent: {
       type: Number,
-      default: null
+      default: null,
     },
 
     top10HoldingPercent: {
       type: Number,
-      default: null
+      default: null,
     },
 
     holderLastCheckedAt: {
       type: Date,
       default: null,
-      index: true
+      index: true,
     },
 
-    // ✅ NEW FIELDS
     topHolders: {
       type: [
         {
           address: String,
           amount: Number,
-          percent: Number
-        }
+          percent: Number,
+        },
       ],
-      default: []
+      default: [],
     },
 
     excludedAccounts: {
@@ -140,26 +158,26 @@ const TokenSnapshotSchema = new Schema<ITokenSnapshot>(
           address: String,
           amount: Number,
           percent: Number,
-          reason: String
-        }
+          reason: String,
+        },
       ],
-      default: []
+      default: [],
     },
 
     signalSent: {
       type: Boolean,
       default: false,
-      index: true
+      index: true,
     },
 
     enrichmentComplete: {
       type: Boolean,
       default: false,
-      index: true
-    }
+      index: true,
+    },
   },
   {
-    timestamps: true
+    timestamps: true,
   }
 );
 

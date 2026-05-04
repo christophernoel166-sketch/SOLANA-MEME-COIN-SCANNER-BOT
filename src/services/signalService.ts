@@ -269,7 +269,7 @@ for (const snap of uniqueSnapshots) {
       // Hard rejection conditions
       if (!hasLiquidity) failureReasons.push("low_liquidity");
       if (!hasLargestHolderData) failureReasons.push("largest_holder_unknown");
-      if (hasLowMomentum) failureReasons.push("low_momentum");
+      
       if (hasLiquidityFragility) failureReasons.push("liquidity_fragility");
       if (hasHighRugRisk) failureReasons.push("high_rug_risk");
 
@@ -343,21 +343,9 @@ for (const snap of uniqueSnapshots) {
         scoreBreakdown.walletBehavior = 0;
       }
 
-      // Momentum / breakout: 20
-      if (hasMomentum) {
-        totalScore += 10;
-        scoreBreakdown.momentum = 10;
-      } else {
-        scoreBreakdown.momentum = 0;
-      }
+      
 
-      if (hasVelocityBreakout) {
-        totalScore += 10;
-        scoreBreakdown.velocityBreakout = 10;
-      } else {
-        failureReasons.push("no_velocity_breakout");
-        scoreBreakdown.velocityBreakout = 0;
-      }
+      
 
       // Participation / conviction: 10
       if (hasHealthyParticipation) {
@@ -409,14 +397,14 @@ for (const snap of uniqueSnapshots) {
       if (totalScore > 100) totalScore = 100;
       if (totalScore < 0) totalScore = 0;
 
-      const hasHardReject =
-  momentumScore < 40 ||
-  rugRiskScore >30 ||
-  (hasLiquidityFragility && rugRiskScore > 20);
+     const hasHardReject =
+  rugRiskScore > 30;
+
 
       const isMatch =
-        totalScore >= PASS_SCORE &&
-        !hasHardReject;
+  hasSafeLargestHolder &&
+  hasSafeTop10Holding &&
+  hasSafeBundle;
 
       console.log("🧪 Signal check:", {
         profile: profile?.name,
