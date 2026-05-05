@@ -207,10 +207,10 @@ for (const snap of uniqueSnapshots) {
         rugRiskReasons.push("holder_fragility");
       }
 
-      if (hasMomentumFailure) {
-        rugRiskScore += 15;
-        rugRiskReasons.push("momentum_failure");
-      }
+      // if (hasMomentumFailure) {
+      // rugRiskScore += 15;
+       // rugRiskReasons.push("momentum_failure");
+     // }
 
       if (hasDangerousBundle) {
         rugRiskScore += 25;
@@ -333,28 +333,28 @@ for (const snap of uniqueSnapshots) {
         scoreBreakdown.bundle = 0;
       }
 
-      const hasSafeWalletBehavior = hasSafeBotCount && hasSafeRatCount;
-      if (hasSafeWalletBehavior) {
-        totalScore += 10;
-        scoreBreakdown.walletBehavior = 10;
-      } else {
-        if (!hasSafeBotCount) failureReasons.push("too_many_bots");
-        if (!hasSafeRatCount) failureReasons.push("too_many_rats");
-        scoreBreakdown.walletBehavior = 0;
-      }
+    //  const hasSafeWalletBehavior = hasSafeBotCount && hasSafeRatCount;
+    //  if (hasSafeWalletBehavior) {
+       // totalScore += 10;
+       // scoreBreakdown.walletBehavior = 10;
+     // } else {
+      //  if (!hasSafeBotCount) failureReasons.push("too_many_bots");
+       // if (!hasSafeRatCount) failureReasons.push("too_many_rats");
+       // scoreBreakdown.walletBehavior = 0;
+     // }
 
       
 
       
 
       // Participation / conviction: 10
-      if (hasHealthyParticipation) {
-        totalScore += 5;
-        scoreBreakdown.walletParticipation = 5;
-      } else {
-        failureReasons.push("low_wallet_participation");
-        scoreBreakdown.walletParticipation = 0;
-      }
+     // if (hasHealthyParticipation) {
+       // totalScore += 5;
+      // scoreBreakdown.walletParticipation = 5;
+     // } else {
+      // failureReasons.push("low_wallet_participation");
+       // scoreBreakdown.walletParticipation = 0;
+      // }
 
       if (hasSafeSniperCount) {
         totalScore += 5;
@@ -397,8 +397,7 @@ for (const snap of uniqueSnapshots) {
       if (totalScore > 100) totalScore = 100;
       if (totalScore < 0) totalScore = 0;
 
-     const hasHardReject =
-  rugRiskScore > 30;
+     const hasHardReject = false;
 
 
       const isMatch =

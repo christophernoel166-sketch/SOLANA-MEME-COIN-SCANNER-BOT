@@ -68,7 +68,7 @@ export function startWatchlistJob(): void {
           entry.trend !== "bullish" ||
           entry.action !== "enter_now" ||
           entry.confidence < 6 ||
-          (entry.profitPotentialPct ?? 0) < 30
+          (entry.profitPotentialPct ?? 0) < 15
         ) {
           console.log(`👀 Still watching ${item.mintAddress}`, {
             trend: entry.trend,
