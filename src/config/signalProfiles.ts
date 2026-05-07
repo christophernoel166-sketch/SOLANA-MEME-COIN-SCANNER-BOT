@@ -18,7 +18,7 @@ export const SIGNAL_PROFILES = [
     minSniperCount: 0,
     maxSniperCount: 20,
 
-    maxBundleScore: 20,
+    maxBundleScore: 31,
     maxBundledWalletCount: 12,
     requireBundleNotFlagged: false,
 
