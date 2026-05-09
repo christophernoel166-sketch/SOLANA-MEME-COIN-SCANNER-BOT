@@ -498,7 +498,7 @@ if (
   continue;
 }
 
-if ((entry.profitPotentialPct ?? 0) < 30) {
+if ((entry.profitPotentialPct ?? 0) < 25) {
   console.log(`❌ Rejected ${snap.mintAddress}: TP potential below 30%`, {
     profitPotentialPct: entry.profitPotentialPct,
     takeProfitLevel: entry.takeProfitLevel,
