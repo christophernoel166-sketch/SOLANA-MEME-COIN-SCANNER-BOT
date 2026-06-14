@@ -16,6 +16,8 @@ import { calculateVelocityBreakout } from "../services/velocityService";
 import { checkLiquidityLocked } from "../services/liquidityLockService";
 
 let isEnrichmentRunning = false;
+const BATCH_SIZE = 5;
+const BATCH_DELAY_MS = 3000;
 
 export function startEnrichmentJob(): void {
   console.log("📊 Market enrichment engine started");
@@ -29,9 +31,20 @@ export function startEnrichmentJob(): void {
     isEnrichmentRunning = true;
 
     try {
-      const tokens = await Token.find()
-        .sort({ createdAt: -1 })
-        .limit(10);
+      const ENRICHMENT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+const tokens = await Token.find({
+  $or: [
+    { lastEnrichedAt: null },
+    {
+      lastEnrichedAt: {
+        $lt: new Date(Date.now() - ENRICHMENT_COOLDOWN_MS)
+      }
+    }
+  ]
+})
+.sort({ createdAt: -1 })
+.limit(100);
 
       console.log(`📦 Tokens found for enrichment: ${tokens.length}`);
 
@@ -40,7 +53,15 @@ export function startEnrichmentJob(): void {
         return;
       }
 
-      for (const token of tokens) {
+      for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+  const batch = tokens.slice(i, i + BATCH_SIZE);
+
+  console.log(
+    `📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(tokens.length / BATCH_SIZE)}`
+  );
+
+  for (const token of batch) {
+try {
         console.log(`🔍 Enriching token: ${token.mintAddress}`);
 
         const market = await fetchMarketData(token.mintAddress);
@@ -314,14 +335,42 @@ liquidityLockCheckedAt: new Date(),
           await calculateVelocityBreakout(token.mintAddress);
           console.log(`📈 Velocity breakout calculated for ${token.mintAddress}`);
         } else {
-          console.log(
-            `⏭️ Skipping advanced analysis for ${token.mintAddress} (market filters not passed)`
-          );
+  console.log(
+    `⏭️ Skipping advanced analysis for ${token.mintAddress} (market filters not passed)`
+  );
 
-          console.log(
-            `🚫 Snapshot skipped for ${token.mintAddress} (did not pass market filters)`
-          );
-        }
+  console.log(
+    `🚫 Snapshot skipped for ${token.mintAddress} (did not pass market filters)`
+  );
+}
+
+} finally {
+
+  await Token.updateOne(
+    { _id: token._id },
+    {
+      $set: {
+        lastEnrichedAt: new Date()
+      }
+    }
+  );
+
+}
+
+} // closes token loop
+
+if (i + BATCH_SIZE < tokens.length) {
+
+  console.log(
+    `⏳ Waiting ${BATCH_DELAY_MS / 1000}s before next batch`
+  );
+
+  await new Promise((resolve) =>
+    setTimeout(resolve, BATCH_DELAY_MS)
+  );
+
+}
+
       }
     } catch (error) {
       console.error("Enrichment error:", error);

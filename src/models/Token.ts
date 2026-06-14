@@ -57,7 +57,8 @@ const TokenSchema = new Schema<IToken>(
 
     lastEnrichedAt: {
       type: Date,
-      default: null
+      default: null,
+      index: true
     }
   },
   {
