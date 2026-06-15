@@ -101,7 +101,12 @@ export async function analyzeChartEntry(
     const avgVolume = average(volumes);
     const avgRecentVolume = average(volumes.slice(-5));
 
-    const resistance = Math.max(...highs.slice(-10));
+ const resistance = Math.max(
+  ...highs.slice(
+    0,
+    Math.max(highs.length - 1, 1)
+  )
+);
     const support = Math.min(...lows.slice(-10));
 
     const volumeNow = volumes.at(-1)!;
@@ -110,25 +115,31 @@ export async function analyzeChartEntry(
     const strongVolume =
       volumeNow > avgVolume * 1.5 || volumeNow > avgRecentVolume * 1.35;
 
+const momentumAcceleration =
+  avgRecentVolume > avgVolume * 1.2;
+
     // ============================
     // 🚀 BREAKOUT LOGIC
     // ============================
     const cleanBreakout =
-      current > resistance && strongVolume && priceRising;
+  current > resistance &&
+  strongVolume &&
+  momentumAcceleration &&
+  priceRising;
 
     const weakBreakout =
       current > resistance && !strongVolume;
 
     const fakeBreakout =
-      current > resistance &&
-      previous > resistance &&
-      current < previous;
+  current > resistance &&
+  previous > resistance &&
+  current < previous * 0.95;
 
     // ============================
     // 🎯 PULLBACK ZONE
     // ============================
-    const pullbackZoneLow = support * 1.02;
-    const pullbackZoneHigh = support * 1.06;
+   const pullbackZoneLow = support * 1.03;
+const pullbackZoneHigh = support * 1.15;
 
     const inPullbackZone =
       current >= pullbackZoneLow &&
@@ -148,7 +159,7 @@ export async function analyzeChartEntry(
     }
 
     const priceChange = first > 0 ? (current - first) / first : 0;
-    const overextended = priceChange >= 0.3;
+  const overextended = priceChange >= 1.0;
 
     // ============================
     // 🎯 DECISION ENGINE
@@ -209,7 +220,7 @@ export async function analyzeChartEntry(
     }
 
     if (!hasDexData) {
-      confidence = Math.min(confidence, 5);
+      confidence = Math.min(confidence, 7);
       reasons.push("no_dex_confirmation");
     }
 
@@ -237,7 +248,10 @@ export async function analyzeChartEntry(
         ? resistance * 0.97
         : support * 0.95;
 
-const takeProfitLevel = breakoutLevel;
+const takeProfitLevel =
+  action === "breakout_only"
+    ? breakoutLevel * 1.30
+    : current * 1.20;
 
 const profitPotentialPct =
   entryMax > 0 && takeProfitLevel > entryMax
