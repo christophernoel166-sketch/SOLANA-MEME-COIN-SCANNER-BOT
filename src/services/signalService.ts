@@ -400,10 +400,9 @@ for (const snap of uniqueSnapshots) {
      const hasHardReject = false;
 
 
-      const isMatch =
-  hasSafeLargestHolder &&
-  hasSafeTop10Holding &&
-  hasSafeBundle;
+     const isMatch =
+  totalScore >= PASS_SCORE &&
+  !hasHighRugRisk;
 
       console.log("🧪 Signal check:", {
         profile: profile?.name,
@@ -463,6 +462,7 @@ for (const snap of uniqueSnapshots) {
 if (
   entry.trend !== "bullish" ||
   entry.action !== "enter_now" ||
+entry.action === "breakout_only"
   entry.confidence < 6
 ) {
   await SignalWatchlist.updateOne(
