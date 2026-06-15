@@ -461,10 +461,13 @@ for (const snap of uniqueSnapshots) {
 
 if (
   entry.trend !== "bullish" ||
-  entry.action !== "enter_now" ||
-entry.action === "breakout_only"
+  !(
+    entry.action === "enter_now" ||
+    entry.action === "breakout_only"
+  ) ||
   entry.confidence < 6
 ) {
+
   await SignalWatchlist.updateOne(
     {
       mintAddress: snap.mintAddress,
