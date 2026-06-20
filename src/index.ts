@@ -23,6 +23,9 @@ import TokenEarlyBuyer from "./models/TokenEarlyBuyer";
 import { getSniperCount } from "./services/sniperIntelService";
 import { startTradeFeed } from "./services/tradeFeedService";
 import { startWatchlistJob } from "./jobs/watchlistJob";
+import { startSignalOutcomeJob } from "./jobs/signalOutcomeJob";
+import { startPatternLearningJob } from "./jobs/patternLearningJob";
+import { startTokenWatchlistJob } from "./jobs/tokenWatchlistJob";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -580,6 +583,9 @@ async function startServer(): Promise<void> {
   startSignalJob();
 startTradeFeed();
 startWatchlistJob();
+startSignalOutcomeJob();
+startPatternLearningJob();
+startTokenWatchlistJob();
 }
 
 startServer();

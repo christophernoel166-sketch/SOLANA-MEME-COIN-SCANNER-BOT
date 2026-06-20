@@ -23,6 +23,12 @@ export interface WalletIntelligenceResult {
   ratTraderHoldingPercent: number;
 
   alphaCallerCount: number;
+ smartDegenWallets: string[];
+  botDegenWallets: string[];
+  ratTraderWallets: string[];
+  alphaCallerWallets: string[];
+
+  allTrackedWallets: string[];
 
   pumpReplyCount: number | null;
 }
@@ -46,13 +52,22 @@ export async function analyzeTokenWallets(
       ratTraderCount: 0,
       ratTraderHoldingPercent: 0,
       alphaCallerCount: 0,
+smartDegenWallets: [],
+botDegenWallets: [],
+ratTraderWallets: [],
+alphaCallerWallets: [],
+allTrackedWallets: [],
       pumpReplyCount: null
     };
   }
 
-  const walletAddresses = holders
-    .map((holder) => holder.owner)
-    .filter(Boolean);
+  const walletAddresses = [
+  ...new Set(
+    holders
+      .map((holder) => holder.owner)
+      .filter(Boolean)
+  ),
+];
 
   const labeledWallets = await WalletLabel.find({
     walletAddress: { $in: walletAddresses }
@@ -72,6 +87,10 @@ export async function analyzeTokenWallets(
   let ratTraderHoldingPercent = 0;
 
   let alphaCallerCount = 0;
+const smartDegenWallets: string[] = [];
+const botDegenWallets: string[] = [];
+const ratTraderWallets: string[] = [];
+const alphaCallerWallets: string[] = [];
 
   for (const holder of holders) {
     const labeledWallet = walletMap.get(holder.owner);
@@ -81,36 +100,52 @@ export async function analyzeTokenWallets(
     const pct = typeof holder.percentage === "number" ? holder.percentage : 0;
 
     if (hasLabel(labeledWallet.labels, "smart_degen")) {
-      smartDegenCount += 1;
-      smartDegenHoldingPercent += pct;
-    }
+  smartDegenCount += 1;
+  smartDegenHoldingPercent += pct;
+  smartDegenWallets.push(holder.owner);
+}
 
     if (hasLabel(labeledWallet.labels, "bot_degen")) {
-      botDegenCount += 1;
-      botDegenHoldingPercent += pct;
-    }
+  botDegenCount += 1;
+  botDegenHoldingPercent += pct;
+  botDegenWallets.push(holder.owner);
+}
 
     if (hasLabel(labeledWallet.labels, "rat_trader")) {
-      ratTraderCount += 1;
-      ratTraderHoldingPercent += pct;
-    }
+  ratTraderCount += 1;
+  ratTraderHoldingPercent += pct;
+  ratTraderWallets.push(holder.owner);
+}
 
     if (hasLabel(labeledWallet.labels, "alpha_caller")) {
-      alphaCallerCount += 1;
-    }
+  alphaCallerCount += 1;
+  alphaCallerWallets.push(holder.owner);
+}
   }
 
   return {
-    mintAddress,
-    smartDegenCount,
-    smartDegenHoldingPercent,
-    botDegenCount,
-    botDegenHoldingPercent,
-    ratTraderCount,
-    ratTraderHoldingPercent,
-    alphaCallerCount,
-    pumpReplyCount: null
-  };
+  mintAddress,
+
+  smartDegenCount,
+  smartDegenHoldingPercent,
+
+  botDegenCount,
+  botDegenHoldingPercent,
+
+  ratTraderCount,
+  ratTraderHoldingPercent,
+
+  alphaCallerCount,
+
+  smartDegenWallets,
+  botDegenWallets,
+  ratTraderWallets,
+  alphaCallerWallets,
+
+allTrackedWallets: walletAddresses,
+
+  pumpReplyCount: null,
+};
 }
 
 export async function saveTokenWalletStats(
@@ -127,6 +162,7 @@ export async function saveTokenWalletStats(
         ratTraderCount: result.ratTraderCount,
         ratTraderHoldingPercent: result.ratTraderHoldingPercent,
         alphaCallerCount: result.alphaCallerCount,
+       allTrackedWallets: result.allTrackedWallets,
         pumpReplyCount: result.pumpReplyCount,
         analyzedAt: new Date()
       }

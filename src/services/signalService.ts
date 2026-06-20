@@ -12,6 +12,15 @@ import { getSniperCount } from "./sniperIntelService";
 import { analyzeChartEntry } from "./chartEntryService";
 import SentSignal from "../models/SentSignal";
 import SignalWatchlist from "../models/SignalWatchlist";
+import { linkSignalWallets } from "../services/signalWalletLinkService";
+import SignalOutcome from "../models/SignalOutcome";
+import { savePatternSnapshot } from "../services/patternSnapshotService";
+import { getPatternConfidence } from "../services/patternConfidenceService";
+import { getAdaptiveWeights } from "../services/adaptiveWeightService";
+import {
+  addToWatchlist,
+  markAsSignaled,
+} from "../services/watchlistService";
 
 type SignalProfile = {
   name: string;
@@ -43,7 +52,10 @@ type SignalProfile = {
 
 const PASS_SCORE = Number(process.env.PASS_SCORE) || 50;
 
-export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
+export async function runSignalEngine(
+  profile?: SignalProfile,
+  mintAddresses?: string[]
+): Promise<void> {
   try {
     console.log("🧠 Running signal engine...");
     if (profile) {
@@ -53,13 +65,29 @@ export async function runSignalEngine(profile?: SignalProfile): Promise<void> {
     const boostedSet = await fetchBoostedTokenSet();
     console.log(`🚀 Boosted tokens loaded: ${boostedSet.size}`);
 
-    const snapshots = await TokenSnapshot.find({
-      signalSent: false,
-      enrichmentComplete: true,
-      pairCreatedAt: { $ne: null },
-    })
-      .sort({ createdAt: -1 })
-      .limit(80);
+    const query: any = {
+  signalSent: false,
+  enrichmentComplete: true,
+  pairCreatedAt: { $ne: null },
+};
+
+if (
+  mintAddresses &&
+  mintAddresses.length > 0
+) {
+  query.mintAddress = {
+    $in: mintAddresses,
+  };
+}
+
+let snapshotQuery = TokenSnapshot.find(query)
+  .sort({ createdAt: -1 });
+
+if (!mintAddresses || mintAddresses.length === 0) {
+  snapshotQuery = snapshotQuery.limit(80);
+}
+
+const snapshots = await snapshotQuery;
 
     const filteredSnapshots = snapshots.filter((snap) => {
   const age = getTokenAgeMinutes(snap.pairCreatedAt);
@@ -94,20 +122,28 @@ console.log(
 );
 
 // 🔹 IMPORTANT: use uniqueSnapshots here
+const weights = await getAdaptiveWeights();
 for (const snap of uniqueSnapshots) {
   const age = getTokenAgeMinutes(snap.pairCreatedAt);
   if (age === null) continue;
 
-      const [walletStats, bundleStats, fundingCluster, momentum, velocity] =
-        await Promise.all([
-          TokenWalletStats.findOne({ mintAddress: snap.mintAddress }).lean(),
-          TokenBundleStats.findOne({ mintAddress: snap.mintAddress }).lean(),
-          TokenFundingCluster.findOne({ mintAddress: snap.mintAddress }).lean(),
-          TokenMomentum.findOne({ mintAddress: snap.mintAddress }).lean(),
-          TokenVelocity.findOne({ mintAddress: snap.mintAddress }).lean(),
-        ]);
+      const [
+  walletStats,
+  bundleStats,
+  fundingCluster,
+  momentum,
+  velocity,
+  sniperCount,
+] = await Promise.all([
+  TokenWalletStats.findOne({ mintAddress: snap.mintAddress }).lean(),
+  TokenBundleStats.findOne({ mintAddress: snap.mintAddress }).lean(),
+  TokenFundingCluster.findOne({ mintAddress: snap.mintAddress }).lean(),
+  TokenMomentum.findOne({ mintAddress: snap.mintAddress }).lean(),
+  TokenVelocity.findOne({ mintAddress: snap.mintAddress }).lean(),
+  getSniperCount(snap.mintAddress),
+]);
 
-      const sniperCount = await getSniperCount(snap.mintAddress);
+      
 
       const momentumScore = momentum?.momentumScore ?? 0;
       const breakoutScore = velocity?.breakoutScore ?? 0;
@@ -126,6 +162,18 @@ for (const snap of uniqueSnapshots) {
         fundingCluster?.largestFundingClusterSize ?? 0;
 
       const isBoosted = boostedSet.has(snap.mintAddress);
+
+const patternConfidence =
+  await getPatternConfidence({
+    smartWalletCount: smartDegenCount,
+    momentumScore,
+    breakoutScore,
+    bundleScore,
+    fundingClusterScore,
+    liquidityUsd: Number(snap.liquidityUsd ?? 0),
+  });
+
+
 
       const buySellRatio =
         (snap.sells ?? 0) > 0
@@ -217,7 +265,7 @@ for (const snap of uniqueSnapshots) {
         rugRiskReasons.push("dangerous_bundle");
       }
 
-      const hasHighRugRisk = rugRiskScore > 30;
+
 
       const hasLiquidity =
         typeof snap.liquidityUsd === "number" &&
@@ -266,12 +314,19 @@ for (const snap of uniqueSnapshots) {
       const scoreBreakdown: Record<string, number> = {};
       let totalScore = 0;
 
+      if (rugRiskScore >= 80) {
+  failureReasons.push("high_rug_risk");
+} else if (rugRiskScore >= 40) {
+  failureReasons.push("moderate_rug_risk");
+}
+
+
       // Hard rejection conditions
       if (!hasLiquidity) failureReasons.push("low_liquidity");
       if (!hasLargestHolderData) failureReasons.push("largest_holder_unknown");
       
       if (hasLiquidityFragility) failureReasons.push("liquidity_fragility");
-      if (hasHighRugRisk) failureReasons.push("high_rug_risk");
+      
 
       // Market quality: 25
       if (hasLiquidity) {
@@ -397,57 +452,200 @@ for (const snap of uniqueSnapshots) {
       if (totalScore > 100) totalScore = 100;
       if (totalScore < 0) totalScore = 0;
 
-     const hasHardReject = false;
+   
 
 
-     const isMatch =
-  totalScore >= PASS_SCORE &&
-  !hasHighRugRisk;
+const walletPerformanceScore = Math.max(
+  0,
+  smartDegenCount * 10 -
+    botDegenCount * 5 -
+    ratTraderCount * 3
+);
+
+const walletFingerprint =
+  `smart_${
+    smartDegenCount >= 5
+      ? "elite"
+      : smartDegenCount >= 3
+      ? "strong"
+      : smartDegenCount >= 1
+      ? "some"
+      : "none"
+  }` +
+  `|bot_${
+    botDegenCount >= 5
+      ? "high"
+      : botDegenCount >= 2
+      ? "medium"
+      : "low"
+  }` +
+  `|rat_${
+    ratTraderCount >= 5
+      ? "high"
+      : ratTraderCount >= 2
+      ? "medium"
+      : "low"
+  }`;
+
+const liquidityBucket =
+  Number(snap.liquidityUsd ?? 0) >= 100000
+    ? "100k_plus"
+    : Number(snap.liquidityUsd ?? 0) >= 50000
+    ? "50k_100k"
+    : Number(snap.liquidityUsd ?? 0) >= 20000
+    ? "20k_50k"
+    : "under_20k";
+
+const marketCapBucket =
+  Number(snap.marketCap ?? 0) >= 1000000
+    ? "1m_plus"
+    : Number(snap.marketCap ?? 0) >= 500000
+    ? "500k_1m"
+    : Number(snap.marketCap ?? 0) >= 250000
+    ? "250k_500k"
+    : "under_250k";
+
+const marketFingerprint =
+  `liq_${liquidityBucket}` +
+  `|mcap_${marketCapBucket}`;
+
+const momentumBucket =
+  momentumScore >= 80
+    ? "very_high"
+    : momentumScore >= 60
+    ? "high"
+    : momentumScore >= 40
+    ? "medium"
+    : "low";
+
+const breakoutBucket =
+  breakoutScore >= 80
+    ? "very_high"
+    : breakoutScore >= 60
+    ? "high"
+    : breakoutScore >= 40
+    ? "medium"
+    : "low";
+
+const bundleBucket =
+  bundleScore <= 20
+    ? "safe"
+    : bundleScore <= 50
+    ? "moderate"
+    : "risky";
+
+const fundingBucket =
+  fundingClusterScore <= 20
+    ? "safe"
+    : fundingClusterScore <= 50
+    ? "moderate"
+    : "clustered";
+
+const structureFingerprint =
+  `momentum_${momentumBucket}` +
+  `|breakout_${breakoutBucket}` +
+  `|bundle_${bundleBucket}` +
+  `|funding_${fundingBucket}`;
+
+const adjustedScore = Math.round(
+  totalScore * (1 - weights.historicalWeight) +
+  patternConfidence.historicalConfidence *
+    weights.historicalWeight
+);
+
+const hasHardReject =
+  !hasLargestHolderData ||
+  rugRiskScore >= 80;
+
+const isMatch =
+  adjustedScore >= PASS_SCORE &&
+  !hasHardReject;
 
       console.log("🧪 Signal check:", {
-        profile: profile?.name,
-        mint: snap.mintAddress,
-        age,
+  profile: profile?.name,
+  mint: snap.mintAddress,
+  age,
 
-        buySellRatio,
-        walletParticipation,
-        hasStrongBuyPressure,
-        hasHealthyParticipation,
-        hasHealthyDistribution,
+  buySellRatio,
+  walletParticipation,
+  hasStrongBuyPressure,
+  hasHealthyParticipation,
+  hasHealthyDistribution,
 
-        sellBuyRatio,
-        hasHeavySellPressure,
-        hasLiquidityFragility,
-        hasHolderFragility,
-        hasMomentumFailure,
-        hasDangerousBundle,
-        rugRiskScore,
-        rugRiskReasons,
+  sellBuyRatio,
+  hasHeavySellPressure,
+  hasLiquidityFragility,
+  hasHolderFragility,
+  hasMomentumFailure,
+  hasDangerousBundle,
+  rugRiskScore,
+  rugRiskReasons,
 
-        largest: snap.largestHolderPercent,
-        top10: snap.top10HoldingPercent,
-        bundleScore,
-        sniperCount,
-        smartDegenCount,
-        botDegenCount,
-        ratTraderCount,
-        fundingClusterScore,
-        largestFundingClusterSize,
-        momentumScore,
-        breakoutScore,
-        isBoosted,
+  largest: snap.largestHolderPercent,
+  top10: snap.top10HoldingPercent,
+  bundleScore,
+  sniperCount,
+  smartDegenCount,
+  botDegenCount,
+  ratTraderCount,
+  fundingClusterScore,
+  largestFundingClusterSize,
+  momentumScore,
+  breakoutScore,
+  isBoosted,
 
-        totalScore,
-        passScore: PASS_SCORE,
-        scoreBreakdown,
-        hasHardReject,
-        isMatch,
-      });
+  totalScore,
+  adjustedScore,
 
-      if (!isMatch) {
-        console.log(`❌ Rejected ${snap.mintAddress}:`, failureReasons);
-        continue;
-      }
+  historicalConfidence:
+    patternConfidence.historicalConfidence,
+
+  historicalPatternKey:
+    patternConfidence.patternKey,
+
+  historicalSamples:
+    patternConfidence.totalSignals,
+
+  passScore: PASS_SCORE,
+
+  scoreBreakdown,
+
+  hasHardReject,
+
+  isMatch,
+});
+
+  const shouldWatch =
+  !failureReasons.includes("high_rug_risk") &&
+  !failureReasons.includes("largest_holder_unknown") &&
+  !failureReasons.includes("bad_holder_distribution");
+
+if (!isMatch) {
+  if (shouldWatch) {
+    await addToWatchlist({
+      mintAddress: snap.mintAddress,
+      lastScore: totalScore,
+      lastAdjustedScore: adjustedScore,
+      rejectionReasons: failureReasons,
+      walletFingerprint,
+      marketFingerprint,
+      structureFingerprint,
+    });
+
+    console.log(
+      `👀 Added ${snap.mintAddress} to watchlist`,
+      failureReasons
+    );
+  } else {
+    console.log(
+      `🚫 Skipping watchlist for ${snap.mintAddress}`,
+      failureReasons
+    );
+  }
+
+  continue;
+}
+
 
       let entry;
 
@@ -476,7 +674,7 @@ if (
     {
       $set: {
         status: "watching",
-        score: totalScore,
+        score: adjustedScore,
         reason: "waiting_for_bullish_chart",
         lastCheckedAt: new Date(),
         lastTrend: entry.trend,
@@ -491,6 +689,8 @@ if (
     { upsert: true }
   );
 
+
+
   console.log(`👀 Added/updated watchlist ${snap.mintAddress}`, {
     trend: entry.trend,
     action: entry.action,
@@ -502,17 +702,32 @@ if (
 }
 
 if ((entry.profitPotentialPct ?? 0) < 25) {
-  console.log(`❌ Rejected ${snap.mintAddress}: TP potential below 30%`, {
-    profitPotentialPct: entry.profitPotentialPct,
-    takeProfitLevel: entry.takeProfitLevel,
+  await addToWatchlist({
+    mintAddress: snap.mintAddress,
+    lastScore: totalScore,
+    lastAdjustedScore: adjustedScore,
+    rejectionReasons: [
+      ...failureReasons,
+      "low_profit_potential",
+    ],
+    walletFingerprint,
+    marketFingerprint,
+    structureFingerprint,
   });
+
+  console.log(
+    `👀 Added ${snap.mintAddress} to watchlist: low profit potential`
+  );
+
   continue;
 }
 
       const message = `
 🚀 *${profile?.name?.toUpperCase() ?? "DEFAULT"} SIGNAL*
 
-Score: ${totalScore}/100
+Score: ${adjustedScore}/100
+Historical Confidence: ${patternConfidence.historicalConfidence}%
+Historical Samples: ${patternConfidence.totalSignals}
 Pass Threshold: ${PASS_SCORE}
 
 CA:
@@ -567,6 +782,65 @@ try {
     profileName: profile?.name ?? "default",
     sentAt: new Date(),
   });
+
+await SignalOutcome.updateOne(
+  {
+    mintAddress: snap.mintAddress,
+  },
+  {
+    $setOnInsert: {
+      mintAddress: snap.mintAddress,
+      signalSentAt: new Date(),
+
+      entryPrice: Number(snap.priceUsd ?? 0),
+
+      currentPrice: Number(snap.priceUsd ?? 0),
+      maxPrice: Number(snap.priceUsd ?? 0),
+      minPrice: Number(snap.priceUsd ?? 0),
+
+      returnPct: 0,
+      maxGainPct: 0,
+      drawdownPct: 0,
+
+      outcome: "pending",
+    },
+  },
+  {
+    upsert: true,
+  }
+);
+
+
+
+await savePatternSnapshot({
+  mintAddress: snap.mintAddress,
+historicalConfidence: patternConfidence.historicalConfidence,
+historicalPatternKey: patternConfidence.patternKey,
+
+  smartWalletCount: smartDegenCount,
+
+  // Placeholder until we calculate a true historical score
+walletPerformanceScore,
+
+  momentumScore,
+
+  breakoutScore,
+
+  bundleScore,
+
+  fundingClusterScore,
+
+  liquidityUsd: Number(snap.liquidityUsd ?? 0),
+
+  marketCap: Number(snap.marketCap ?? 0),
+
+  volume5m: Number(snap.volume5m ?? 0),
+walletFingerprint,
+marketFingerprint,
+structureFingerprint,
+});
+   
+
 } catch (error: any) {
   if (error?.code === 11000) {
     console.log(`⚠️ Signal already sent for ${snap.mintAddress}`);
@@ -589,12 +863,27 @@ await TokenSnapshot.updateMany(
   }
 );
 
+await markAsSignaled(
+  snap.mintAddress
+);
+
+// Link all tracked wallets associated with this signal
+await linkSignalWallets({
+  mintAddress: snap.mintAddress,
+  walletAddresses: walletStats?.allTrackedWallets ?? [],
+});
+
 await sendTelegramSignal(message, profile?.name);
 
 console.log("🚨 SIGNAL TRIGGERED:", snap.mintAddress, {
   totalScore,
+  adjustedScore,
+  historicalConfidence:
+    patternConfidence.historicalConfidence,
   profile: profile?.name,
 });
+
+
   } // ← closes: for (const snap ...)
   
 } // ← closes: try block

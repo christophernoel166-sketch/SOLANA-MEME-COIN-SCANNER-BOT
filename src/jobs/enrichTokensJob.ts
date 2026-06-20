@@ -258,6 +258,13 @@ const hasLockedLiquidity = liquidityLock.locked !== false;
           });
 
           const earlyBuyers = await getEarlyBuyers(token.mintAddress, 20);
+await trackSniperWallets(
+  token.mintAddress
+);
+
+console.log(
+  `🎯 Sniper wallets refreshed for ${token.mintAddress}`
+);
 
           if (earlyBuyers.length > 0) {
             const buyerFunders = earlyBuyers.map((buyer) => ({

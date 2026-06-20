@@ -14,6 +14,9 @@ export interface ITokenWalletStats extends Document {
 
   alphaCallerCount: number;
 
+  // ✅ NEW: Stores all wallets analyzed for this token
+  allTrackedWallets: string[];
+
   pumpReplyCount?: number | null;
 
   analyzedAt: Date;
@@ -27,56 +30,62 @@ const TokenWalletStatsSchema = new Schema<ITokenWalletStats>(
     mintAddress: {
       type: String,
       required: true,
-      index: true
+      index: true,
     },
 
     smartDegenCount: {
       type: Number,
-      default: 0
+      default: 0,
     },
 
     smartDegenHoldingPercent: {
       type: Number,
-      default: 0
+      default: 0,
     },
 
     botDegenCount: {
       type: Number,
-      default: 0
+      default: 0,
     },
 
     botDegenHoldingPercent: {
       type: Number,
-      default: 0
+      default: 0,
     },
 
     ratTraderCount: {
       type: Number,
-      default: 0
+      default: 0,
     },
 
     ratTraderHoldingPercent: {
       type: Number,
-      default: 0
+      default: 0,
     },
 
     alphaCallerCount: {
       type: Number,
-      default: 0
+      default: 0,
+    },
+
+    // ✅ NEW: Persist participating wallet addresses
+    allTrackedWallets: {
+      type: [String],
+      default: [],
     },
 
     pumpReplyCount: {
       type: Number,
-      default: null
+      default: null,
     },
 
     analyzedAt: {
       type: Date,
-      default: Date.now
-    }
+      default: Date.now,
+    },
   },
   {
-    timestamps: true
+    timestamps: true,
   }
 );
 
