@@ -1,14 +1,23 @@
 import AdaptiveWeights from "../models/AdaptiveWeights";
 
 export async function getAdaptiveWeights() {
-  let weights =
+  const existing =
     await AdaptiveWeights.findOne().lean();
 
-  if (!weights) {
-    weights = (
-      await AdaptiveWeights.create({})
-    ).toObject();
+  if (existing) {
+    return existing;
   }
 
-  return weights;
+  await AdaptiveWeights.create({});
+
+  const created =
+    await AdaptiveWeights.findOne().lean();
+
+  if (!created) {
+    throw new Error(
+      "Failed to initialize AdaptiveWeights"
+    );
+  }
+
+  return created;
 }
